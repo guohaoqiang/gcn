@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import time
 import torch
 import torch.optim as optim
 from torch.nn.parameter import Parameter
@@ -35,16 +36,25 @@ class GraphConvolution(Module):
         if self.bias is not None:
             self.bias.data.uniform_(-stdv, stdv)
 
-    def forward(self, input, adj):
+    def forward(self, input, adj, name='dataset', layer='layer0'):
+        t1 = 0
         if input.data.is_sparse:
+            #print(name+' : '+layer+' : '+'spmm')
+            t1 = time.time()
             support = torch.spmm(input, self.weight)
+            t1 = time.time()-t1
         else:
+            #print(name+' : '+layer+' : '+'mm')
+            t1 = time.time()
             support = torch.mm(input, self.weight)
+            t1 = time.time()-t1
+        t2 = time.time()    
         output = torch.spmm(adj, support)
+        t2 = time.time()-t2
         if self.bias is not None:
-            return output + self.bias
+            return output + self.bias, t1, t2
         else:
-            return output
+            return output, t1, t2
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' \
@@ -78,25 +88,43 @@ class GCN(nn.Module):
         self.best_output = None
         self.adj_norm = None
         self.features = None
+        
+        self.t_fp = 0
+        self.t_bp = 0
+        self.t_fp_l1 = 0
+        self.t_fp_t1_l1 = 0
+        self.t_fp_t2_l1 = 0
+        self.t_fp_l2 = 0
+        self.t_fp_t1_l2 = 0
+        self.t_fp_t2_l2 = 0
 
-    def forward(self, x, adj):
+    def forward(self, x, adj, name='dataset'):
         '''
             adj: normalized adjacency matrix
         '''
+        t_l1 = 0   # time cost in the first layer
+        t_l2 = 0   # time cost in the second layer
         if self.with_relu:
-            x = F.relu(self.gc1(x, adj))
+            t_l1 = time.time()
+            x, t1_l1, t2_l1 = self.gc1(x, adj, name, layer='Layer1')
+            x = F.relu(x)
+            t_l1 = time.time() - t_l1;
         else:
-            x = self.gc1(x, adj)
-
+            t_l1 = time.time()
+            x, t1_l1, t2_l1 = self.gc1(x, adj, name, layer='Layer1')
+            t_l1 = time.time() - t_l1;
+        
+        t_l2 = time.time()
         x = F.dropout(x, self.dropout, training=self.training)
-        x = self.gc2(x, adj)
-        return F.log_softmax(x, dim=1)
+        x, t1_l2, t2_l2  = self.gc2(x, adj, name, layer='Layer2')
+        t_l2 = time.time() - t_l2;
+        return F.log_softmax(x, dim=1), t_l1, t1_l1, t2_l1, t_l2, t1_l2, t2_l2
 
     def initialize(self):
         self.gc1.reset_parameters()
         self.gc2.reset_parameters()
 
-    def fit(self, features, adj, labels, idx_train, idx_val=None, train_iters=200, initialize=True, verbose=False, normalize=True, patience=500):
+    def fit(self, features, adj, labels, idx_train, idx_val=None, train_iters=200, initialize=True, verbose=False, normalize=True, patience=500, name='dataset'):
         '''
             train the gcn model, when idx_val is not None, pick the best model
             according to the validation loss
@@ -125,30 +153,61 @@ class GCN(nn.Module):
         self.labels = labels
 
         if idx_val is None:
-            self._train_without_val(labels, idx_train, train_iters, verbose)
+            self._train_without_val(labels, idx_train, train_iters, verbose, name)
         else:
             if patience < train_iters:
-                self._train_with_early_stopping(labels, idx_train, idx_val, train_iters, patience, verbose)
+                self._train_with_early_stopping(labels, idx_train, idx_val, train_iters, patience, verbose, name)
             else:
-                self._train_with_val(labels, idx_train, idx_val, train_iters, verbose)
+                self._train_with_val(labels, idx_train, idx_val, train_iters, verbose, name)
+        
+        print('Forward time: {:.4f}s'.format(self.t_fp))
+        print('Layer1 time: {:.4f}s'.format(self.t_fp_l1))
+        print('Layer1 XW time: {:.4f}s'.format(self.t_fp_t1_l1))
+        print('Layer1 A(XW) time: {:.4f}s'.format(self.t_fp_t2_l1))
+        print('Layer2 time: {:.4f}s'.format(self.t_fp_l2))
+        print('Layer2 XW time: {:.4f}s'.format(self.t_fp_t1_l2))
+        print('Layer2 A(XW) time: {:.4f}s'.format(self.t_fp_t2_l2))
+        print('Backward time: {:.4f}s'.format(self.t_bp))
 
-    def _train_without_val(self, labels, idx_train, train_iters, verbose):
+    def _train_without_val(self, labels, idx_train, train_iters, verbose, name):
+        print('_train_without_val')
         self.train()
         optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        
         for i in range(train_iters):
             optimizer.zero_grad()
-            output = self.forward(self.features, self.adj_norm)
+            temp1 = time.time()
+            output, t_l1, t1_l1, t2_l1, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
             loss_train = F.nll_loss(output[idx_train], labels[idx_train])
+            self.t_fp += (time.time()-temp1)
+            
+            temp2 = time.time()
             loss_train.backward()
             optimizer.step()
+            self.t_bp += (time.time()-temp2)
+            
+            self.t_fp_l1 += t_l1
+            self.t_fp_t1_l1 += t1_l1 
+            self.t_fp_t2_l1 += t2_l1
+            self.t_fp_l2 += t_l2
+            self.t_fp_t1_l2 += t1_l2
+            self.t_fp_t2_l2 += t2_l2
             if verbose and i % 10 == 0:
                 print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
 
         self.eval()
-        output = self.forward(self.features, self.adj_norm)
+        output, t_l1, t1_l1, t2_l1, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
+        self.t_fp_l1 += t_l1
+        self.t_fp_t1_l1 += t1_l1 
+        self.t_fp_t2_l1 += t2_l1
+        self.t_fp_l2 += t_l2
+        self.t_fp_t1_l2 += t1_l2
+        self.t_fp_t2_l2 += t2_l2
+        
         self.output = output
 
-    def _train_with_val(self, labels, idx_train, idx_val, train_iters, verbose):
+    def _train_with_val(self, labels, idx_train, idx_val, train_iters, verbose, name):
+        print('_train_with_val')
         if verbose:
             print('=== training gcn model ===')
         optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -159,7 +218,7 @@ class GCN(nn.Module):
         for i in range(train_iters):
             self.train()
             optimizer.zero_grad()
-            output = self.forward(self.features, self.adj_norm)
+            output = self.forward(self.features, self.adj_norm, name)
             loss_train = F.nll_loss(output[idx_train], labels[idx_train])
             loss_train.backward()
             optimizer.step()
@@ -187,6 +246,7 @@ class GCN(nn.Module):
         self.load_state_dict(weights)
 
     def _train_with_early_stopping(self, labels, idx_train, idx_val, train_iters, patience, verbose):
+        print('_train_with_early_stopping')
         if verbose:
             print('=== training gcn model ===')
         optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -232,7 +292,7 @@ class GCN(nn.Module):
 
     def test(self, idx_test):
         self.eval()
-        output = self.predict()
+        output, t_l1, t1_l1, t2_l1, t_l2, t1_l2, t2_l2 = self.predict()
         # output = self.output
         loss_test = F.nll_loss(output[idx_test], self.labels[idx_test])
         acc_test = utils.accuracy(output[idx_test], self.labels[idx_test])
