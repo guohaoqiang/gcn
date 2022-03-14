@@ -61,7 +61,6 @@ class GraphConvolution(Module):
                + str(self.in_features) + ' -> ' \
                + str(self.out_features) + ')'
 
-
 class GCN(nn.Module):
 
     def __init__(self, nfeat, nhid, nclass, dropout=0.5, lr=0.01, weight_decay=5e-4, with_relu=True, with_bias=True, device=None):
@@ -94,6 +93,7 @@ class GCN(nn.Module):
         self.t_fp_l1 = 0
         self.t_fp_t1_l1 = 0
         self.t_fp_t2_l1 = 0
+        self.t_fp_t_relu = 0
         self.t_fp_l2 = 0
         self.t_fp_t1_l2 = 0
         self.t_fp_t2_l2 = 0
@@ -104,11 +104,15 @@ class GCN(nn.Module):
         '''
         t_l1 = 0   # time cost in the first layer
         t_l2 = 0   # time cost in the second layer
+        t_relu = 0
         if self.with_relu:
             t_l1 = time.time()
             x, t1_l1, t2_l1 = self.gc1(x, adj, name, layer='Layer1')
-            x = F.relu(x)
             t_l1 = time.time() - t_l1;
+            
+            t_relu = time.time()
+            x = F.relu(x)
+            t_relu = time.time() - t_relu
         else:
             t_l1 = time.time()
             x, t1_l1, t2_l1 = self.gc1(x, adj, name, layer='Layer1')
@@ -118,7 +122,7 @@ class GCN(nn.Module):
         x = F.dropout(x, self.dropout, training=self.training)
         x, t1_l2, t2_l2  = self.gc2(x, adj, name, layer='Layer2')
         t_l2 = time.time() - t_l2;
-        return F.log_softmax(x, dim=1), t_l1, t1_l1, t2_l1, t_l2, t1_l2, t2_l2
+        return F.log_softmax(x, dim=1), t_l1, t1_l1, t2_l1, t_relu, t_l2, t1_l2, t2_l2
 
     def initialize(self):
         self.gc1.reset_parameters()
@@ -164,6 +168,7 @@ class GCN(nn.Module):
         print('Layer1 time: {:.4f}s'.format(self.t_fp_l1))
         print('Layer1 XW time: {:.4f}s'.format(self.t_fp_t1_l1))
         print('Layer1 A(XW) time: {:.4f}s'.format(self.t_fp_t2_l1))
+        print('Layer reLU time: {:.4f}s'.format(self.t_fp_t_relu))
         print('Layer2 time: {:.4f}s'.format(self.t_fp_l2))
         print('Layer2 XW time: {:.4f}s'.format(self.t_fp_t1_l2))
         print('Layer2 A(XW) time: {:.4f}s'.format(self.t_fp_t2_l2))
@@ -177,7 +182,7 @@ class GCN(nn.Module):
         for i in range(train_iters):
             optimizer.zero_grad()
             temp1 = time.time()
-            output, t_l1, t1_l1, t2_l1, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
+            output, t_l1, t1_l1, t2_l1, t_relu, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
             loss_train = F.nll_loss(output[idx_train], labels[idx_train])
             self.t_fp += (time.time()-temp1)
             
@@ -189,6 +194,7 @@ class GCN(nn.Module):
             self.t_fp_l1 += t_l1
             self.t_fp_t1_l1 += t1_l1 
             self.t_fp_t2_l1 += t2_l1
+            self.t_fp_t_relu += t_relu
             self.t_fp_l2 += t_l2
             self.t_fp_t1_l2 += t1_l2
             self.t_fp_t2_l2 += t2_l2
@@ -196,10 +202,11 @@ class GCN(nn.Module):
                 print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
 
         self.eval()
-        output, t_l1, t1_l1, t2_l1, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
+        output, t_l1, t1_l1, t2_l1, t_relu, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
         self.t_fp_l1 += t_l1
         self.t_fp_t1_l1 += t1_l1 
         self.t_fp_t2_l1 += t2_l1
+        self.t_fp_t_relu += t_relu
         self.t_fp_l2 += t_l2
         self.t_fp_t1_l2 += t1_l2
         self.t_fp_t2_l2 += t2_l2
@@ -292,7 +299,7 @@ class GCN(nn.Module):
 
     def test(self, idx_test):
         self.eval()
-        output, t_l1, t1_l1, t2_l1, t_l2, t1_l2, t2_l2 = self.predict()
+        output, t_l1, t1_l1, t2_l1, t_relu, t_l2, t1_l2, t2_l2 = self.predict()
         # output = self.output
         loss_test = F.nll_loss(output[idx_test], self.labels[idx_test])
         acc_test = utils.accuracy(output[idx_test], self.labels[idx_test])
