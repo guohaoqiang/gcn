@@ -39,7 +39,7 @@ class GraphConvolution1(Module):
     def forward(self, support, name='dataset', layer='layer0'):
         t1 = time.time()    
         output = torch.mm(support,self.weight)
-        t1 = time.time()-t2
+        t1 = time.time()-t1
         if self.bias is not None:
             return output + self.bias, t1
         else:
@@ -144,12 +144,12 @@ class GCN(nn.Module):
         t_l1 = 0   # time cost in the first layer
         t_l2 = 0   # time cost in the second layer
         t_relu = 0
-        support = torch.sparse.mm(adj,x)
+        support = torch.sparse.mm(adj,x.to_dense())
         if self.with_relu:
             t_l1 = time.time()
             x, t1_l1 = self.gc1(support, name, layer='Layer1')
             t_l1 = time.time() - t_l1;
-            t_relu = time()
+            t_relu = time.time()
             x = F.relu(x)
             t_relu = time.time() - t_relu;
         else:
@@ -206,7 +206,7 @@ class GCN(nn.Module):
         print('Forward time: {:.4f}s'.format(self.t_fp))
         print('Layer1 time: {:.4f}s'.format(self.t_fp_l1))
         print('Layer1 (AX)W time: {:.4f}s'.format(self.t_fp_t1_l1))
-        print('Layer reLU time: {:.4f}s'.format(self.t_fp_relu))
+        print('Layer reLU time: {:.4f}s'.format(self.t_fp_t_relu))
         print('Layer2 time: {:.4f}s'.format(self.t_fp_l2))
         print('Layer2 XW time: {:.4f}s'.format(self.t_fp_t1_l2))
         print('Layer2 A(XW) time: {:.4f}s'.format(self.t_fp_t2_l2))
