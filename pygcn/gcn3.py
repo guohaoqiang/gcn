@@ -50,13 +50,13 @@ class GraphConvolution1(Module):
                + str(self.in_features) + ' -> ' \
                + str(self.out_features) + ')'
 
-class GraphConvolution(Module):
+class GraphConvolution2(Module):
     """
     Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
     """
 
     def __init__(self, in_features, out_features, with_bias=True):
-        super(GraphConvolution, self).__init__()
+        super(GraphConvolution2, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.weight = Parameter(torch.FloatTensor(in_features, out_features))
@@ -77,19 +77,13 @@ class GraphConvolution(Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input, adj, name='dataset', layer='layer0'):
-        t1 = 0
-        if input.data.is_sparse:
-            #print(name+' : '+layer+' : '+'spmm')
-            t1 = time.time()
-            support = torch.spmm(input, self.weight)
-            t1 = time.time()-t1
-        else:
-            #print(name+' : '+layer+' : '+'mm')
-            t1 = time.time()
-            support = torch.mm(input, self.weight)
-            t1 = time.time()-t1
-        t2 = time.time()    
-        output = torch.spmm(adj, support)
+        
+        t1 = time.time()    
+        support = torch.spmm(adj, input)
+        t1 = time.time()-t1
+        
+        t2 = time.time()
+        output = torch.mm(support, self.weight)
         t2 = time.time()-t2
         if self.bias is not None:
             return output + self.bias, t1, t2
@@ -113,7 +107,7 @@ class GCN(nn.Module):
         self.hidden_sizes = [nhid]
         self.nclass = nclass
         self.gc1 = GraphConvolution1(nfeat, nhid, with_bias=with_bias)
-        self.gc2 = GraphConvolution(nhid, nclass, with_bias=with_bias)
+        self.gc2 = GraphConvolution2(nhid, nclass, with_bias=with_bias)
         self.dropout = dropout
         self.lr = lr
         if not with_relu:
@@ -209,8 +203,8 @@ class GCN(nn.Module):
         print('Layer1 (AX)W time: {:.4f}s'.format(self.t_fp_t1_l1))
         print('Layer reLU time: {:.4f}s'.format(self.t_fp_t_relu))
         print('Layer2 time: {:.4f}s'.format(self.t_fp_l2))
-        print('Layer2 XW time: {:.4f}s'.format(self.t_fp_t1_l2))
-        print('Layer2 A(XW) time: {:.4f}s'.format(self.t_fp_t2_l2))
+        print('Layer2 AX time: {:.4f}s'.format(self.t_fp_t1_l2))
+        print('Layer2 (AX)W time: {:.4f}s'.format(self.t_fp_t2_l2))
         print('Backward time: {:.4f}s'.format(self.t_bp))
 
     def _train_without_val(self, labels, idx_train, train_iters, verbose, name):
