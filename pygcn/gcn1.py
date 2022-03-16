@@ -9,6 +9,7 @@ from torch.nn.modules.module import Module
 from pygcn.gcnio.util import utils
 from copy import deepcopy
 from sklearn.metrics import f1_score
+from pygcn.writecsv import save  
 
 class GraphConvolution(Module):
     """
@@ -156,6 +157,8 @@ class GCN(nn.Module):
         self.features = features
         self.labels = labels
 
+        save.write(adj_norm,name)
+        
         if idx_val is None:
             self._train_without_val(labels, idx_train, train_iters, verbose, name)
         else:

@@ -9,6 +9,8 @@ from torch.nn.modules.module import Module
 from pygcn.gcnio.util import utils
 from copy import deepcopy
 from sklearn.metrics import f1_score
+from pygcn.writecsv import save 
+
 
 class GraphConvolution1(Module):
     """
@@ -77,6 +79,8 @@ class GraphConvolution2(Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input, adj, name='dataset', layer='layer0'):
+        
+
         
         t1 = time.time()    
         support = torch.spmm(adj, input)
@@ -190,6 +194,9 @@ class GCN(nn.Module):
         self.features = features
         self.labels = labels
 
+        if utils.is_sparse_tensor(adj_norm):
+            save.write(adj_norm, name)
+        
         if idx_val is None:
             self._train_without_val(labels, idx_train, train_iters, verbose, name)
         else:
