@@ -18,12 +18,26 @@ def write(adj,name):
     log.info(row.size)
     log.info(col.size)
     log.info(data.size)
-    adj_csr = csr_matrix((data, (row, col)), shape=(adj.shape[0], adj.shape[1]))
     
+    if name=="amazon":
+        fo = open(name+'_coo'+'.csv', "w")
+        writer = csv.writer(fo)
+        writer.writerow(row.tolist())
+        writer.writerow(col.tolist())
+        writer.writerow(data.tolist())
+        fo.close()
+        return True
+    
+    adj_csr = csr_matrix((data, (row, col)), shape=(adj.shape[0], adj.shape[1]))
+    log.info("coo->csr finished.")
     temp = []
     temp.append(adj_csr.indptr.tolist())
+    log.info("row offset appended.")
     temp.append(adj_csr.indices.tolist())
+    log.info("col index appended.")
     temp.append(adj_csr.data.tolist())
+    log.info("Value appended.")
+    
     
     fo = open(name+'.csv', "w")
     writer = csv.writer(fo)
@@ -32,4 +46,4 @@ def write(adj,name):
         writer.writerow(r)
     fo.close()
     
-    return True;
+    return True
