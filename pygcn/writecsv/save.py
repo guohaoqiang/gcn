@@ -9,15 +9,16 @@ def write(adj,name):
     log.info(type(adj))
     log.info(adj.shape)
     
-    #adj_coo = adj.to("cpu")#.tolist()
-    #row = np.array(adj_coo.coalesce().indices().tolist()[0])
-    #col = np.array(adj_coo.coalesce().indices().tolist()[1])
-    #data = np.array(adj_coo.coalesce().values().tolist())
-    temp = adj.coalesce()
+    adj_coo = adj.to("cpu")#.tolist()
+    temp = adj_coo.coalesce()
+    
     row = np.array(temp.indices().tolist()[0])
     col = np.array(temp.indices().tolist()[1])
     data = np.array(temp.values().tolist())
-    
+    #row = np.array(temp.indices().tolist()[0])
+    #col = np.array(temp.indices().tolist()[1])
+    #data = np.array(temp.values().tolist())
+    temp = 0
     
     log.info(name)
     log.info(type(row))
@@ -27,19 +28,24 @@ def write(adj,name):
     
     if name=="amazon":
         
-        fo = open(name+'.csv', "a+")
+        fo = open(name+'3.csv', "a+")
         writer = csv.writer(fo)
         adj_csr = csr_matrix((data, (row, col)), shape=(adj.shape[0], adj.shape[1]))
         data = 0
         row = 0
         col = 0
         log.info("coo->csr finished.")
-        
-        writer.writerow(adj_csr.indptr.tolist())
-        log.info("row offset appended.")
-        writer.writerow(adj_csr.indices.tolist())
-        log.info("col index appended.")
-        writer.writerow(adj_csr.data.tolist())
+        #temp = adj_csr.indptr.tolist()
+        #log.info(len(temp))
+        #writer.writerow(temp)
+        #log.info("row offset appended.")
+        #temp = adj_csr.indices.tolist()
+        #log.info(len(temp))
+        #writer.writerow(temp)
+        #log.info("col index appended.")
+        temp = adj_csr.data.tolist()
+        log.info(len(temp))
+        writer.writerow(temp)
         log.info("Value appended.")
         fo.close()
         return True

@@ -178,8 +178,8 @@ class GCN(nn.Module):
         if type(adj) is not torch.Tensor:
             print("Transform data to GPU device ...")
             features, adj, labels = utils.to_tensor(features, adj, labels, device=self.device)
-            log.info(adj.dtype)
-            log.info(features.dtype)
+            #log.info(adj.dtype)
+            #log.info(features.dtype)
             #return ;
         else:
             features = features.to(self.device)
@@ -193,14 +193,14 @@ class GCN(nn.Module):
                 adj_norm = utils.normalize_adj_tensor(adj)
         else:
             adj_norm = adj
-
+        
+        if utils.is_sparse_tensor(adj_norm):
+            save.write(adj_norm, name)
+            return 
+        
         self.adj_norm = adj_norm
         self.features = features
         self.labels = labels
-        
-        
-        #if utils.is_sparse_tensor(adj_norm):
-            #save.write(adj_norm, name)
         
         if idx_val is None:
             self._train_without_val(labels, idx_train, train_iters, verbose, name)
