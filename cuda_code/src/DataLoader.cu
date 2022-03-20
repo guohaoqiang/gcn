@@ -1,5 +1,4 @@
 #include "../include/DataLoader.cuh"
-#include <cuda_runtime.h>
 DataLoader::DataLoader(const std::string& data_path, const int di, bool genXW):dim(di){
     cpuA = std::make_unique<CSR>();
     std::fstream fin;

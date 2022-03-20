@@ -16,7 +16,7 @@ WARN_FLAGS = -g -Wall -Wextra -Wabi -Wctor-dtor-privacy -Wnon-virtual-dtor -Wreo
 
 NVXX = nvcc
 #NVXXFLAGS = -arch sm_80
-NVXX_LINK_FLAGS = -lcusparse -lcublas -lcudart
+#NVXX_LINK_FLAGS = -lcusparse -lcublas -lcudart
 
 
 SRC = ./src
@@ -38,14 +38,16 @@ test:
 	@echo ${CU_OBJECTS}
 
 exe: $(CC_OBJECTS) $(CU_OBJECTS)
-	$(CXX) -o $@ $^ $(CXX_LINK_FLAGS) $(NVXXFLAGS) $(WARN_FLAGS) $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS) $(LIB_FLAGS)
-	#$(CXX) -o $@ $^ $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS) $(NVXX_LINK_FLAGS) $(NVXXFLAGS) $(WARN_FLAGS) 
+	$(CXX) -o $@ $^ $(CXX_LINK_FLAGS) $(WARN_FLAGS) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS) $(LIB_FLAGS)
+	#$(CXX) -o $@ $^ $(CXX_LINK_FLAGS) $(NVXXFLAGS) $(WARN_FLAGS) $(CUDA_INC_DIR) $(CUDA_LIB_DIR) $(CUDA_LINK_LIBS) $(LIB_FLAGS)
 
 $(OBJ)/%.cc.o: $(SRC)/%.cc $(INC)/%.h
-	$(CXX) -c $< -o $@ $(WARN_FLAGS) $(CXXFLAGS) $(CXX_LINK_FLAGS) $(INC_FLAGS) $(LIB_FLAGS) $(CUDA_INC_DIR) $(CUDA_LIB_DIR)
+	$(CXX) -c $< -o $@ $(WARN_FLAGS) $(CXXFLAGS) $(INC_FLAGS) $(CUDA_INC_DIR)
+	#$(CXX) -c $< -o $@ $(WARN_FLAGS) $(CXXFLAGS) $(CXX_LINK_FLAGS) $(INC_FLAGS) $(LIB_FLAGS) $(CUDA_INC_DIR) $(CUDA_LIB_DIR)
 
 $(OBJ)/%.cu.o: $(SRC)/%.cu $(INC)/%.cuh
-	$(NVXX) -c $< -o $@ $(NVXXFLAGS) $(NVXX_LINK_FLAGS) $(INC_FLAGS) $(LIB_FLAGS) $(CXX_LINK_FLAGS) $(CUDA_LIB_DIR) $(CUDA_INC_DIR)
+	$(NVXX) -c $< -o $@ $(INC_FLAGS)
+	#$(NVXX) -c $< -o $@ $(NVXXFLAGS) $(NVXX_LINK_FLAGS) $(INC_FLAGS) $(LIB_FLAGS) $(CXX_LINK_FLAGS) $(CUDA_LIB_DIR) $(CUDA_INC_DIR)
 
 
 .PHONY: clean
