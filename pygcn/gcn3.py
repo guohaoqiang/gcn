@@ -4,6 +4,7 @@ import math
 import time
 import torch
 import torch.optim as optim
+import glog as log
 from torch.nn.parameter import Parameter
 from torch.nn.modules.module import Module
 from pygcn.gcnio.util import utils
@@ -177,6 +178,8 @@ class GCN(nn.Module):
         if type(adj) is not torch.Tensor:
             print("Transform data to GPU device ...")
             features, adj, labels = utils.to_tensor(features, adj, labels, device=self.device)
+            log.info(adj.dtype)
+            log.info(features.dtype)
         else:
             features = features.to(self.device)
             adj = adj.to(self.device)
@@ -193,9 +196,10 @@ class GCN(nn.Module):
         self.adj_norm = adj_norm
         self.features = features
         self.labels = labels
-
-        if utils.is_sparse_tensor(adj_norm):
-            save.write(adj_norm, name)
+        
+        
+        #if utils.is_sparse_tensor(adj_norm):
+            #save.write(adj_norm, name)
         
         if idx_val is None:
             self._train_without_val(labels, idx_train, train_iters, verbose, name)

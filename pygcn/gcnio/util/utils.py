@@ -4,6 +4,7 @@ import torch
 from sklearn.model_selection import train_test_split
 import torch.sparse as ts
 import torch.nn.functional as F
+from pygcn.writecsv import save 
 
 def encode_onehot(labels):
     classes = set(labels)
@@ -40,11 +41,12 @@ def to_tensor(adj, features, labels=None, device='cpu'):
         adj = sparse_mx_to_torch_sparse_tensor(adj)
     else:
         adj = torch.FloatTensor(adj)
+    #save.write(adj, "amazon")
+    #return adj, features, labels
     if sp.issparse(features):
         features = sparse_mx_to_torch_sparse_tensor(features)
     else:
         features = torch.FloatTensor(np.array(features))
-
     if labels is None:
         return adj.to(device), features.to(device)
     else:
