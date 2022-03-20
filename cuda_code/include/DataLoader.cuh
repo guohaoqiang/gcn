@@ -41,11 +41,15 @@ public:
 	std::unique_ptr<T[]> cpuX; // n * dim
 	std::unique_ptr<T[]> cpuW; // dim * c
 	std::unique_ptr<T[]> cpuC; // n * c
+	std::unique_ptr<T[]> cpuRef1; // n * c
+	std::unique_ptr<T[]> cpuRef2; // n * c
     
     std::unique_ptr<dCSR> gpuA;
     T *gpuX = nullptr;
     T *gpuW = nullptr;
     T *gpuC = nullptr;
+    T *gpuRef1 = nullptr;
+    T *gpuRef2 = nullptr;
 
     size_t n, dim, c;
     std::string graph_name;

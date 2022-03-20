@@ -19,7 +19,6 @@ int main(int argc, char *argv[])
         for (size_t i=0; i<WarmupIterations; ++i){
             Metrics metric0 = Metrics();
             run1(data,metric0);
-            //CUDA_CHECK(cudaMemset(data.gpuC, 0, sizeof(T) * data.n * data.c));
             run2(data,metric0);
         } 
         for (size_t i=0; i<ExecutionIterations; ++i){
@@ -29,13 +28,13 @@ int main(int argc, char *argv[])
             run1(data,metric1);
             baselinemetrics1 += metric1;
            
-            //CUDA_CHECK(cudaMemset(data.gpuC, 0, sizeof(T) * data.n * data.c));
             // step1: B = AX
             // step2: C = BW 
             Metrics metric2 = Metrics();
             run2(data,metric2);
             baselinemetrics2 += metric2;
         } 
+
     } 
 
     for (size_t i=0; i<WarmupIterations; ++i){
@@ -48,8 +47,8 @@ int main(int argc, char *argv[])
         benchmetrics += metric;
     } 
 
-    //std::cout<<"A(XW): "<< baselinemetrics1.flops/baselinemetrics1.t << "Gflops/s"<<std::endl;
-    //std::cout<<"(AX)W: "<< baselinemetrics2.flops/baselinemetrics2.t << "Gflops/s"<<std::endl;
+    std::cout<<"A(XW): "<< baselinemetrics1.flops/(baselinemetrics1.t/ExecutionIterations)/(1e+6) << " Gflops/s"<<std::endl;
+    std::cout<<"(AX)W: "<< baselinemetrics2.flops/(baselinemetrics2.t/ExecutionIterations)/(1e+6) << " Gflops/s"<<std::endl;
     //std::cout<<"AXW: "<< benchmetrics.flops/benchmetrics.t << "Gflops/s"<<std::endl;
     
     return 0;

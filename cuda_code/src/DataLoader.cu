@@ -85,6 +85,8 @@ bool DataLoader::transfer(){
     CUDA_CHECK(cudaMemcpy(gpuX, &cpuX[0], sizeof(T)*n*dim, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(gpuW, &cpuW[0], sizeof(T)*dim*c, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(gpuC, 0, sizeof(T)*n*c));
+    CUDA_CHECK(cudaMemset(gpuRef1, 0, sizeof(T)*n*c));
+    CUDA_CHECK(cudaMemset(gpuRef2, 0, sizeof(T)*n*c));
     LOG(INFO) << "A, X & W have transfered to gpu ...";
     return true;
 }
@@ -93,6 +95,8 @@ bool DataLoader::alloc(){
     cpuX = std::make_unique<T []>(n*dim);
     cpuW = std::make_unique<T []>(c*dim);
     cpuC = std::make_unique<T []>(n*c);
+    cpuRef1 = std::make_unique<T []>(n*c);
+    cpuRef2 = std::make_unique<T []>(n*c);
     //memset(cpuC, 0, sizeof(T)*n*c);
 
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&(gpuA->row)), sizeof(unsigned int) * (cpuA->r+1)));
@@ -102,6 +106,8 @@ bool DataLoader::alloc(){
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuX), sizeof(T) * n * dim));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuW), sizeof(T) * c * dim));
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuC), sizeof(T) * c * n));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuRef1), sizeof(T) * c * n));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuRef2), sizeof(T) * c * n));
     return true;
 }
 
