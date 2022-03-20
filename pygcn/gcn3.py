@@ -180,6 +180,7 @@ class GCN(nn.Module):
             features, adj, labels = utils.to_tensor(features, adj, labels, device=self.device)
             log.info(adj.dtype)
             log.info(features.dtype)
+            #return ;
         else:
             features = features.to(self.device)
             adj = adj.to(self.device)

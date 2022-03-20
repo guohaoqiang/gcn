@@ -13,10 +13,10 @@ def write(adj,name):
     #row = np.array(adj_coo.coalesce().indices().tolist()[0])
     #col = np.array(adj_coo.coalesce().indices().tolist()[1])
     #data = np.array(adj_coo.coalesce().values().tolist())
-    
-    row = np.array(adj.coalesce().indices().tolist()[0])
-    col = np.array(adj.coalesce().indices().tolist()[1])
-    data = np.array(adj.coalesce().values().tolist())
+    temp = adj.coalesce()
+    row = np.array(temp.indices().tolist()[0])
+    col = np.array(temp.indices().tolist()[1])
+    data = np.array(temp.values().tolist())
     
     
     log.info(name)
@@ -27,7 +27,7 @@ def write(adj,name):
     
     if name=="amazon":
         
-        fo = open(name+'.csv', "w")
+        fo = open(name+'.csv', "a+")
         writer = csv.writer(fo)
         adj_csr = csr_matrix((data, (row, col)), shape=(adj.shape[0], adj.shape[1]))
         data = 0
