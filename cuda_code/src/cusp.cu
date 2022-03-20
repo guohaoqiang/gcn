@@ -26,7 +26,7 @@ int run1(DataLoader& input, Metrics& metric){
     CUBLAS_CHECK(cublasSgemm(cublasH, transa, transb, input.n, input.c, input.dim, &alpha, 
                 input.gpuX, input.n, input.gpuW, input.dim, &beta, gpuB, input.n));
     CUBLAS_CHECK(cublasDestroy(cublasH));
-    LOG(INFO) << "step1 of run1 completed ...";
+    //LOG(INFO) << "step1 of run1 completed ...";
 
     //----------  C = AB : sparsemm------------
     // CUSPARSE APIs
@@ -63,7 +63,7 @@ int run1(DataLoader& input, Metrics& metric){
                                  &alpha, matA, matB, &beta, matC, CUDA_R_32F,
                                  CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
 
-    LOG(INFO) << "step2 of run1 completed ...";
+    //LOG(INFO) << "step2 of run1 completed ...";
     // ############################
 	cudaDeviceSynchronize();
 	cudaEventRecord(stop);
@@ -132,7 +132,7 @@ int run2(DataLoader& input, Metrics& metric){
                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
                                  &alpha, matA, matB, &beta, matC, CUDA_R_32F,
                                  CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
-    LOG(INFO) << "step1 of run2 completed ...";
+    //LOG(INFO) << "step1 of run2 completed ...";
     //----------  C = BW : sgemm------------
     
     cublasOperation_t transa = CUBLAS_OP_N;
@@ -147,7 +147,7 @@ int run2(DataLoader& input, Metrics& metric){
                 gpuB, input.n, input.gpuW, input.dim, &beta, input.gpuRef2, input.n));
     CUBLAS_CHECK(cublasDestroy(cublasH));
 
-    LOG(INFO) << "step2 of run2 completed ...";
+    //LOG(INFO) << "step2 of run2 completed ...";
 
     // ############################
 	cudaDeviceSynchronize();
