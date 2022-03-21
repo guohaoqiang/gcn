@@ -1,5 +1,7 @@
 #include "../include/DataLoader.cuh"
 DataLoader::DataLoader(const std::string& data_path, const int di, bool genXW):dim(di){
+    std::string data_name = data_path.substr(data_path.find_last_of("/")+1,-1);
+    graph_name = data_name.substr(0, data_name.find(".")); 
     cpuA = std::make_unique<CSR>();
     std::fstream fin;
     fin.open(data_path,std::ios::in);
@@ -19,21 +21,29 @@ DataLoader::DataLoader(const std::string& data_path, const int di, bool genXW):d
     while(std::getline(ss2,word,',')){
         cpuA->col.push_back(std::stoi(word));        
     }
-
-    std::getline(fin,line);
-    std::stringstream ss3(line);
-    while(std::getline(ss3,word,',')){
-        cpuA->vals.push_back(std::stof(word));        
+    
+    if (data_name == "amazon.csv"){
+        // amazon.csv only contains row offset and col indice
+        fin.close(); 
+        std::cout<<"Amazon n = "<<cpuA->row.size()-1<<std::endl;
+        std::cout<<"Amazon nnz = "<<cpuA->col.size()<<std::endl;
+        for (size_t i=0; i<cpuA->col.size(); ++i){
+            cpuA->vals.push_back((float)rand()/RAND_MAX/100);        
+        }
+    }else{
+        std::getline(fin,line);
+        std::stringstream ss3(line);
+        while(std::getline(ss3,word,',')){
+            cpuA->vals.push_back(std::stof(word));        
+        }
+        fin.close(); 
     }
     assert(cpuA->col.size()==cpuA->vals.size());
     n = cpuA->row.size()-1; 
     cpuA->r = cpuA->row.size()-1; 
     cpuA->c = cpuA->row.size()-1; 
     cpuA->nnz = cpuA->col.size();
-    fin.close(); 
 
-    std::string data_name = data_path.substr(data_path.find_last_of("/")+1,-1);
-    graph_name = data_name.substr(0, data_name.find(".")); 
     if (data_name == "polblogs.csv"){
         c = 2; 
     }else if(data_name == "cora.csv"){
@@ -61,10 +71,10 @@ DataLoader::DataLoader(const std::string& data_path, const int di, bool genXW):d
         if (alloc()){
             LOG(INFO) << "Initialize X & W ...";
             for (int i=0; i<n*dim; ++i){
-                cpuX[i] = rand()/RAND_MAX;
+                cpuX[i] = (float)rand()/RAND_MAX;
             }
             for (int i=0; i<c*dim; ++i){
-                cpuW[i] = rand()/RAND_MAX;
+                cpuW[i] = (float)rand()/RAND_MAX;
             }
             LOG(INFO) << "X & W initialized ...";
             //print_data();
@@ -99,18 +109,28 @@ bool DataLoader::alloc(){
     cpuRef2 = std::make_unique<T []>(n*c);
     //memset(cpuC, 0, sizeof(T)*n*c);
 
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&(gpuA->row)), sizeof(unsigned int) * (cpuA->r+1)));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&(gpuA->col)), sizeof(unsigned int) * (cpuA->nnz)));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&(gpuA->vals)), sizeof(T) * (cpuA->nnz)));
+    CUDA_CHECK(cudaMalloc(&(gpuA->row), sizeof(unsigned int) * (cpuA->r+1)));
+    CUDA_CHECK(cudaMalloc(&(gpuA->col), sizeof(unsigned int) * (cpuA->nnz)));
+    CUDA_CHECK(cudaMalloc(&(gpuA->vals), sizeof(T) * (cpuA->nnz)));
     
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuX), sizeof(T) * n * dim));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuW), sizeof(T) * c * dim));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuC), sizeof(T) * c * n));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuRef1), sizeof(T) * c * n));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&gpuRef2), sizeof(T) * c * n));
+    CUDA_CHECK(cudaMalloc(&gpuX, sizeof(T) * n * dim));
+    CUDA_CHECK(cudaMalloc(&gpuW, sizeof(T) * c * dim));
+    CUDA_CHECK(cudaMalloc(&gpuC, sizeof(T) * c * n));
+    CUDA_CHECK(cudaMalloc(&gpuRef1, sizeof(T) * c * n));
+    CUDA_CHECK(cudaMalloc(&gpuRef2, sizeof(T) * c * n));
     return true;
 }
-
+bool DataLoader::compare(){
+    for (size_t i=0; i<n*c; ++i){
+        if (abs(cpuRef1[i]-cpuRef2[i])>=0.01){
+            std::cout<<"Ref1["<<i<<"]="<<std::setprecision(12)<<cpuRef1[i]<<" / "<<"Ref2["<<i<<"]="<<std::setprecision(12)<<cpuRef2[i]<<std::endl;
+            return false;
+        }
+        //if (cpuC[i] != cpuRef2[i])  return false;
+    }
+    std::cout<<"The results are correct.. "<<std::endl;
+    return true;
+}
 void DataLoader::print_data(){
     LOG(INFO) << "print start.";
     std::cout<<"The first 5 elements of rowptr: ";

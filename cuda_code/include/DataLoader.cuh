@@ -9,6 +9,7 @@
 #include <string>
 #include <cstdlib>
 #include <assert.h>
+#include <iomanip>
 #include "common.h"
 #define T float
 class CSR
@@ -35,6 +36,7 @@ public:
     
     bool transfer();
     bool alloc();
+    bool compare();
     void print_data();
     
     std::unique_ptr<CSR> cpuA; // n * n 

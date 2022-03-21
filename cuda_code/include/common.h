@@ -7,11 +7,20 @@
 #include <stdlib.h>           // EXIT_FAILURE
 struct Metrics {
     float t = 0.0f;
+    float spgemm_t = 0.0f;
+    float gemm_t = 0.0f;
     float flops = 0.0f;
+    float spgemm_flops = 0.0f;
+    float gemm_flops = 0.0f;
+    float dataMovement = 0.0f;
 
     void operator+=(const Metrics& b) {
         t += b.t;
-        flops += b.flops;
+        spgemm_t += b.spgemm_t;
+        gemm_t += b.gemm_t;
+        flops = b.flops;
+        spgemm_flops = b.spgemm_flops;
+        gemm_flops = b.gemm_flops;
     }
 
     void operator/=(const float& x) {
