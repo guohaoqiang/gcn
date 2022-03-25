@@ -20,14 +20,20 @@ def get_nnz(f):
 def get_xy(r):
     a = pd.Series(r)
     b = a.value_counts()
-    xx = []
+    yy = [] # Frequency
     for i in list(b.index):
-        xx.append(b[i])
-    temp = np.sort(np.array(xx))
-    x = np.concatenate([temp, temp[[-1]]])
-    yy = temp/temp.sum()
-    y = np.append(yy,1)
-    return min(temp),max(temp),x,y
+        yy.append(b[i])
+    yy = np.array(yy)
+    yy = yy/yy.sum()  # Percentile
+    xx = b.index      # NNZs
+    ind = np.lexsort((yy,xx))
+    x = [0]
+    y = [0]
+    
+    for i in ind:
+        x.append(xx[i])
+        y.append(yy[i]+y[-1])
+    return min(x),max(x),x,y
 
 f = open('cora.csv','r')
 f1 = csv.reader(f)
@@ -137,8 +143,8 @@ plt.legend(loc='best')
 
 plt.xlim([-0.01,1.01])
 
-plt.ylim([np.log10(mn), np.log10(mx)])
+plt.ylim([np.log10(1), np.log10(mx)+0.1])
 
 plt.grid()
 
-plt.savefig('row.png')
+plt.savefig("row.svg")
