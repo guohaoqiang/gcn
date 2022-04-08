@@ -196,7 +196,6 @@ class GCN(nn.Module):
         
         if utils.is_sparse_tensor(adj_norm):
             save.write(adj_norm, name)
-            return 
         
         self.adj_norm = adj_norm
         self.features = features
