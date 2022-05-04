@@ -8,7 +8,7 @@ from numpy import argmax
 import torch.nn.functional as F
 from pygcn.gcnio.data import dataio
 from pygcn.gcnio.util import utils
-from pygcn.gcn3 import GCN
+from pygcn.gcn1 import GCN
 import scipy.sparse
 import json
 from sklearn.preprocessing import StandardScaler

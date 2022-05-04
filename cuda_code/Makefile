@@ -15,7 +15,7 @@ CXX_LINK_FLAGS = -lglog -lgflags -lpthread
 WARN_FLAGS = -g -Wall -Wextra -Wabi -Wctor-dtor-privacy -Wnon-virtual-dtor -Wreorder -Wstrict-null-sentinel -Woverloaded-virtual -Wshadow -Wcast-align -Wpointer-arith -Wwrite-strings -Wundef -Wredundant-decls
 
 NVXX = nvcc
-#NVXXFLAGS = -arch sm_80
+NVXXFLAGS = -arch sm_75
 #NVXX_LINK_FLAGS = -lcusparse -lcublas -lcudart
 
 
@@ -46,7 +46,7 @@ $(OBJ)/%.cc.o: $(SRC)/%.cc $(INC)/%.h
 	#$(CXX) -c $< -o $@ $(WARN_FLAGS) $(CXXFLAGS) $(CXX_LINK_FLAGS) $(INC_FLAGS) $(LIB_FLAGS) $(CUDA_INC_DIR) $(CUDA_LIB_DIR)
 
 $(OBJ)/%.cu.o: $(SRC)/%.cu $(INC)/%.cuh
-	$(NVXX) -c $< -o $@ $(INC_FLAGS)
+	$(NVXX) -c $< -o $@ $(INC_FLAGS) $(NVXXFLAGS)
 	#$(NVXX) -c $< -o $@ $(NVXXFLAGS) $(NVXX_LINK_FLAGS) $(INC_FLAGS) $(LIB_FLAGS) $(CXX_LINK_FLAGS) $(CUDA_LIB_DIR) $(CUDA_INC_DIR)
 
 

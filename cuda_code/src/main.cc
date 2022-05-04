@@ -6,8 +6,8 @@ DEFINE_bool(cmp, true, "Compare results");
 
 int main(int argc, char *argv[])
 {
-    int WarmupIterations  = 5;
-    int ExecutionIterations = 30;
+    int WarmupIterations  = 3;
+    int ExecutionIterations = 5;
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     VLOG(2)<<"Loading bench config....";
     DataLoader data(FLAGS_input, FLAGS_dim);
@@ -55,15 +55,15 @@ int main(int argc, char *argv[])
     std::cout<<"        "<< baselinemetrics1.flops/(1e+6) << " Mflops"<<std::endl;
     std::cout<<"        "<< baselinemetrics1.t*(1e-3)/ExecutionIterations << " s"<<std::endl;
     std::cout<<"        "<< baselinemetrics1.flops/(baselinemetrics1.t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl;
-    std::cout<<"   gemm:"<< baselinemetrics1.gemm_flops/(baselinemetrics1.gemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
-    std::cout<<" spgemm:"<< baselinemetrics1.spgemm_flops/(baselinemetrics1.spgemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
+    std::cout<<"   gemm:"<< baselinemetrics1.gemm_t*(1e-3)/ExecutionIterations << " s   "<< baselinemetrics1.gemm_flops/(baselinemetrics1.gemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
+    std::cout<<" spgemm:"<< baselinemetrics1.spgemm_t*(1e-3)/ExecutionIterations << " s   "<<baselinemetrics1.spgemm_flops/(baselinemetrics1.spgemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
     //std::cout<<"(AX)W: "<< baselinemetrics2.flops/(baselinemetrics2.t/ExecutionIterations)/(1e+6) << " Gflops/s"<<std::endl;
     std::cout<<"(AX)W: "<<std::endl;
     std::cout<<"       "<< baselinemetrics2.flops/(1e+6) << " Mflops"<<std::endl;
     std::cout<<"       "<< baselinemetrics2.t*(1e-3)/ExecutionIterations << " s"<<std::endl;
     std::cout<<"       "<< baselinemetrics2.flops/(baselinemetrics2.t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl;
-    std::cout<<"   gemm:"<< baselinemetrics2.gemm_flops/(baselinemetrics2.gemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
-    std::cout<<" spgemm:"<< baselinemetrics2.spgemm_flops/(baselinemetrics2.spgemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
+    std::cout<<"   gemm:"<< baselinemetrics2.gemm_t*(1e-3)/ExecutionIterations << " s   "<< baselinemetrics2.gemm_flops/(baselinemetrics2.gemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
+    std::cout<<" spgemm:"<< baselinemetrics2.spgemm_t*(1e-3)/ExecutionIterations << " s   "<< baselinemetrics2.spgemm_flops/(baselinemetrics2.spgemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
     //std::cout<<"AXW: "<< benchmetrics.flops/benchmetrics.t << "Gflops/s"<<std::endl;
     
     return 0;
