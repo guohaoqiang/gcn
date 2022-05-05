@@ -157,7 +157,7 @@ class GCN(nn.Module):
         self.features = features
         self.labels = labels
 
-        save.write(adj_norm,name)
+        #save.write(adj_norm,name)
         
         if idx_val is None:
             self._train_without_val(labels, idx_train, train_iters, verbose, name)

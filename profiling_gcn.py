@@ -8,7 +8,7 @@ from numpy import argmax
 import torch.nn.functional as F
 from pygcn.gcnio.data import dataio
 from pygcn.gcnio.util import utils
-from pygcn.gcn3 import GCN
+from pygcn.gcn1 import GCN
 import scipy.sparse
 import json
 from sklearn.preprocessing import StandardScaler
@@ -101,7 +101,7 @@ if SMALL:
     log.info(type(idx_test))
     log.info(idx_test.shape)
 else:
-    data_prefix = './dataset/amazon'
+    data_prefix = './dataset/reddit'
     temp_data = load_data(data_prefix)
     data_list = data_prefix.split('/')
     print(data_list[-1])
@@ -142,7 +142,7 @@ optimizer = optim.Adam(model.parameters(),
 model = model.to(device)
 TRAIN = 1
 if TRAIN:
-    model.fit(features, adj, labels, idx_train, train_iters=1, verbose=True, name='amazon')
+    model.fit(features, adj, labels, idx_train, train_iters=200, verbose=True, name='reddit')
     torch.save(model.state_dict(),'./model/gcn.pt')
 TEST = 1
 if TEST:

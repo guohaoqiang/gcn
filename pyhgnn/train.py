@@ -3,6 +3,7 @@ import time
 import copy
 import torch
 import torch.optim as optim
+import glog as log
 import pprint as pp
 import utils.hypergraph_utils as hgut
 from models import HGNN
@@ -37,7 +38,8 @@ G = torch.Tensor(G).to(device)
 print(G.shape)
 print(torch.nonzero(G).shape)
 G = G.to_sparse()
-save.write(G,'ModelNet40')
+
+#save.write(G,'ModelNet40')
 idx_train = torch.Tensor(idx_train).long().to(device)
 idx_test = torch.Tensor(idx_test).long().to(device)
 
