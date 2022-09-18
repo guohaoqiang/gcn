@@ -1,6 +1,6 @@
 #include "../include/main.h"
 #define T float
-DEFINE_string(input, "../data/cora.csv", "The name of benchmarks.");
+DEFINE_string(input, "./data/cora.csv", "The name of benchmarks.");
 DEFINE_int32(dim, 32, "The dims of output.");
 DEFINE_bool(cmp, true, "Compare results");
 
