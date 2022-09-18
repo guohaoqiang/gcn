@@ -25,8 +25,8 @@ use_gvcnn_feature_for_structure: True
 #Model
 #--------------------------------------------------
 # select the dataset you use, ModelNet40 or NTU2012
-on_dataset: &o_d ModelNet40
-#on_dataset: &o_d NTU2012
+#on_dataset: &o_d ModelNet40
+on_dataset: &o_d NTU2012
 #--------------------------------------------------
 
 #---------------------------------------

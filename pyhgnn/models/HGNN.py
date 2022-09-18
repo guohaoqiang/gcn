@@ -4,6 +4,7 @@ import time
 import torch.nn.functional as F
 import math
 import torch
+import glog as log
 from torch.nn.parameter import Parameter
 
 class HGNN_conv(nn.Module):
@@ -31,6 +32,7 @@ class HGNN_conv(nn.Module):
             x = x + self.bias
         #x = G.matmul(x)
         t2 = time.time()
+        log.info(x.shape)
         x = torch.sparse.mm(G,x)
         t2 = time.time() - t2
         return x,t1,t2
