@@ -15,6 +15,7 @@ int main(int argc, char *argv[])
     std::cout<<"A: "<<data.cpuA->r<<"*"<<data.cpuA->c<<"  X: "<<data.n<<"*"<<data.dim<<"   W: "<<data.dim<<"*"<<data.c<<std::endl;
     std::cout<<"NNZ of A: "<<data.cpuA->nnz<<std::endl;
     Metrics baselinemetrics1, baselinemetrics2, benchmetrics;
+#ifdef AXW
     if (FLAGS_cmp){
         for (size_t i=0; i<WarmupIterations; ++i){
             Metrics metric0 = Metrics();
@@ -65,7 +66,8 @@ int main(int argc, char *argv[])
     std::cout<<"   gemm:"<< baselinemetrics2.gemm_t*(1e-3)/ExecutionIterations << " s   "<< baselinemetrics2.gemm_flops/(baselinemetrics2.gemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
     std::cout<<" spgemm:"<< baselinemetrics2.spgemm_t*(1e-3)/ExecutionIterations << " s   "<< baselinemetrics2.spgemm_flops/(baselinemetrics2.spgemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
     //std::cout<<"AXW: "<< benchmetrics.flops/benchmetrics.t << "Gflops/s"<<std::endl;
-    
+#endif
+    convert(data);
     return 0;
 
 }
