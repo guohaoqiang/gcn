@@ -7,7 +7,7 @@
 using namespace std;
 class mat{
 public:
-	int m,n;
+	int m,k;
 	int nnz;
 	int pos;
 	int tm,tn;

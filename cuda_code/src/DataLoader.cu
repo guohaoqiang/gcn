@@ -63,15 +63,17 @@ DataLoader::DataLoader(const std::string& data_path, const int di, bool genXW):d
     }else if (data_name == "amazon.csv"){
         c = 107; 
     }else{
-        std::cout<<"not supported data"<<std::endl;
-        exit(0);
+        //std::cout<<"not supported data"<<std::endl;
+        //exit(0);
+        c = 100;
     }
     gpuA = std::make_unique<dCSR>();
     if (genXW){
         if (alloc()){
             LOG(INFO) << "Initialize X & W ...";
             for (int i=0; i<n*dim; ++i){
-                cpuX[i] = (float)rand()/RAND_MAX;
+                //cpuX[i] = (float)rand()/RAND_MAX;
+                cpuX[i] = 1;
             }
             for (int i=0; i<c*dim; ++i){
                 cpuW[i] = (float)rand()/RAND_MAX;

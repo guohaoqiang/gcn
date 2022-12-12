@@ -4,16 +4,16 @@ mat::mat(std::vector<unsigned int>& r,
 		std::vector<unsigned int>& c, 
 		std::vector<DataType>& v, 
 		int h, 
-		int w,
-		int n):m(h),n(w),nnz(n),rowPtr(r),colIdx(c),vals(v){
-			tm = 16,tn = 16;
+		int kk,
+		int nz):m(h),k(kk),nnz(nz),rowPtr(r),colIdx(c),vals(v){
+			tm = 4,tn = 4;
 			tileRowPtr.push_back(0);
 			nnzPtr.push_back(0);
 
 			rowOffset.resize(nnz);
 			tileColIdx.resize(nnz);
 			newVals.resize(nnz);
-			// the length of nnzPtr is unknown sor far
+			// the length of nnzPtr is unknown so far
 
 			pos = 0; 
 
@@ -84,8 +84,8 @@ void mat::csr2tile(){
 	//tileRowPtr.resize(tileRows+1);
 
 	for (int i=0; i<tileRows; ++i){
-		//csr2flex(i);
-		csr2regular(i);
+		csr2flex(i);
+		//csr2regular(i);
 	}
 }
 // convert a row of tiles to regular tiles
