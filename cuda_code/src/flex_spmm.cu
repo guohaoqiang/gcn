@@ -1,5 +1,16 @@
 #include "../include/flex_spmm.cuh"
 __device__ __forceinline__
+uint8_t smem_u8addr(const void *smem_ptr) {
+    uint8_t addr;
+    asm ("{.reg .u64 u64addr;\n"
+         " cvta.to.shared.u64 u64addr, %1;\n"
+         " cvt.u8.u64 %0, u64addr;}\n"
+         : "=r"(addr)
+         : "l"(smem_ptr)
+    );
+    return addr;
+}
+__device__ __forceinline__
 uint32_t smem_u32addr(const void *smem_ptr) {
     uint32_t addr;
     asm ("{.reg .u64 u64addr;\n"
@@ -8,7 +19,6 @@ uint32_t smem_u32addr(const void *smem_ptr) {
          : "=r"(addr)
          : "l"(smem_ptr)
     );
-
     return addr;
 }
 __device__ __forceinline__
@@ -18,6 +28,21 @@ void stg32(const float &reg, void *ptr, bool guard) {
         " setp.ne.b32 p, %2, 0;\n"
         " @p st.global.f32 [%0], %1;}\n"
         : : "l"(ptr), "f"(reg), "r"((int)guard)
+    );
+}
+__device__ __forceinline__
+void sts8(const uint8_t &reg, const uint8_t &addr) {
+    asm volatile (
+        "st.shared.u8 [%0], %1;\n"
+        : : "r"(addr), "r"(reg)
+    );
+}
+__device__ __forceinline__
+void lds8(uint8_t &reg, const uint8_t &addr) {
+    asm volatile (
+        "ld.shared.u8 %0, [%1];\n"
+        : "=r"(reg)
+        : "r"(addr)
     );
 }
 __device__ __forceinline__
@@ -95,13 +120,13 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 	__shared__ char smem[(8*16*16 + 512)*WARPS];
 	#endif
 	float* a_vals_smem = reinterpret_cast<float *>(smem+warp_id*2560);                 // 2.5k
-	char* a_idx_smem = reinterpret_cast<char *>(smem+warp_id*2560 + 1024);
+	uint8_t* a_idx_smem = reinterpret_cast<uint8_t *>(smem+warp_id*2560 + 1024);
 	float* c_mat_sh = reinterpret_cast<float *>(smem+WARPS*2560);                     // two warps: 2 * 2.5k = 5k
 
 	uint32_t a_vals_sts = smem_u32addr(a_vals_smem);
 	uint32_t a_vals_lds = smem_u32addr(a_vals_smem);
-	char a_idx_sts = smem_u32addr(a_idx_smem);
-	char a_idx_lds = smem_u32addr(a_idx_smem);
+	uint8_t a_idx_sts = smem_u8addr(a_idx_smem);
+	uint8_t a_idx_lds = smem_u8addr(a_idx_smem);
 
 	// ************ load A tile ( && B rows required by first tile) from glb mem to shared memory (registers) *********************************************
 	// row_flag[0]: bits represent existance of B rows, determined by col idx of A entrys 
@@ -119,9 +144,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
 			uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 			// load a to shared mem
-			a_idx_sts[entry_idx+lane_id-tileNnz[warp_tileStart_id]] = r_c_Offset[entry_idx+lane_id];
-            float val_tmp = vals[entry_idx+lane_id];
-			sts32(val_tmp, a_vals_sts+(r_offset*16+c_offset)*sizeof(float));
+			uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
+			sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+            float aVal_tmp = vals[entry_idx+lane_id];
+			sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
 			// load b to registers
 			for (uint32_t j=0; j<32; ++j){
@@ -153,9 +179,11 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			//uint32_t act_thds = __popc(mask);
 
 			// load a to shared mem
-			a_idx_sts[entry_idx+lane_id-tileNnz[warp_tileStart_id]] = r_c_Offset[entry_idx+lane_id];
-            float val_tmp = vals[entry_idx+lane_id];
-			sts32(val_tmp, a_vals_sts+(r_offset*16+c_offset)*sizeof(float));
+			uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
+			sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+            float aVal_tmp = vals[entry_idx+lane_id];
+			sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
+			
 
 			// load b to registers
 			for (uint32_t j=0; j<16; ++j){
@@ -186,11 +214,12 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			//uint32_t act_thds = __popc(mask);
 
 			// load a to shared mem
-			a_idx_sts[entry_idx+lane_id-tileNnz[warp_tileStart_id]] = r_c_Offset[entry_idx+lane_id];
-            float val_tmp = vals[entry_idx+lane_id];
-			sts32(val_tmp, a_vals_sts+(r_offset*16+c_offset)*sizeof(float));
-
-			// load b to registers
+			uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
+			sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+            float aVal_tmp = vals[entry_idx+lane_id];
+			sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
+			
+            // load b to registers
 			for (uint32_t j=0; j<8; ++j){
 				int rc_idx_tmp = __shfl_sync(FULL_MASK, rc_idx, j); 
 				//char rc_idx_tmp = a_idx_sts[entry_idx+j-tileNnz[warp_tileStart_id]];
@@ -217,9 +246,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 
 			// load a to shared mem
-			a_idx_sts[entry_idx+lane_id-tileNnz[warp_tileStart_id]] = r_c_Offset[entry_idx];
-            float val_tmp = vals[entry_idx+lane_id];
-			sts32(val_tmp, a_vals_sts+(r_offset*16+c_offset)*sizeof(float));
+			uint8_t aVal_idx_tmp = r_c_Offset[entry_idx];
+			sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+            float aVal_tmp = vals[entry_idx];
+			sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
 			// the i-th bit represents the i-th B row is alrealdy loaded in shared memory
 			// load b to registers
@@ -263,9 +293,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 
 					// load a to shared mem
-					a_idx_sts[entry_idx+lane_id-tileNnz[warp_tileStart_id]] = r_c_Offset[entry_idx+lane_id];
-                    float val_tmp = vals[entry_idx+lane_id];
-			        sts32(val_tmp, a_vals_sts+(r_offset*16+c_offset)*sizeof(float));
+			        uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
+			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+                    float aVal_tmp = vals[entry_idx+lane_id];
+			        sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
 					// load b to registers
 					for (uint32_t j=0; j<32; ++j){
@@ -293,9 +324,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 
 					// load a to shared mem
-					a_idx_sts[entry_idx+lane_id-tileNnz[warp_tileStart_id]] = r_c_Offset[entry_idx+lane_id];
-                    float val_tmp = vals[entry_idx+lane_id];
-			        sts32(val_tmp, a_vals_sts+(r_offset*16+c_offset)*sizeof(float));
+			        uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
+			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+                    float aVal_tmp = vals[entry_idx+lane_id];
+			        sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
 					// load b to registers
 					for (uint32_t j=0; j<16; ++j){
@@ -323,9 +355,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 
 					// load a to shared mem
-					a_idx_sts[entry_idx+lane_id-tileNnz[warp_tileStart_id]] = r_c_Offset[entry_idx+lane_id];
-                    float val_tmp = vals[entry_idx+lane_id];
-			        sts32(val_tmp, a_vals_sts+(r_offset*16+c_offset)*sizeof(float));
+			        uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
+			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+                    float aVal_tmp = vals[entry_idx+lane_id];
+			        sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
 					// load b to registers
 					for (uint32_t j=0; j<8; ++j){
@@ -352,9 +385,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
 					uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 					// load a to shared mem
-					a_idx_sts[entry_idx+lane_id-tileNnz[warp_tileStart_id]] = r_c_Offset[entry_idx+lane_id];
-                    float val_tmp = vals[entry_idx+lane_id];
-			        sts32(val_tmp, a_vals_sts+(r_offset*16+c_offset)*sizeof(float));
+			        uint8_t aVal_idx_tmp = r_c_Offset[entry_idx];
+			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+                    float aVal_tmp = vals[entry_idx];
+			        sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
 					// load b to registers
 					// the i-th bit represents the i-th B row is alrealdy loaded in shared memory
@@ -385,19 +419,27 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			
 			// visit all nze in the current tile
 			// both tileNNz and r_c_offfset have good locality, so no need to optimize their memory access behavior?
-			uint32_t r_offset = a_idx_lds[0] & 240;     // .. & 1111 0000
-			uint32_t c_offset = a_idx_lds[0] & 15;      // .. & 0000 1111
+            uint8_t a_idx_tmp;
+            lds8(a_idx_tmp, a_idx_lds + 0*sizeof(uint8_t));
+			//uint32_t r_offset = a_idx_lds[0] & 240;     // .. & 1111 0000
+			//uint32_t c_offset = a_idx_lds[0] & 15;      // .. & 0000 1111
+			uint32_t r_offset = a_idx_tmp & 240;     // .. & 1111 0000
+			uint32_t c_offset = a_idx_tmp & 15;      // .. & 0000 1111
 			//a_reg[tileNnz[i]%2] = a_vals_lds[r_offset*16+c_offset];
-			lds32(&a_reg[tileNnz[i]%2], a_vals_lds + (r_offset*16+c_offset)*sizeof(float));
+			lds32(a_reg[tileNnz[i]%2], a_vals_lds + (r_offset*16+c_offset)*sizeof(float));
 			for (uint32_t entry_idx = tileNnz[i]; entry_idx<tileNnz[i+1]; ++entry_idx){
 				uint32_t r_offset_tmp, c_offset_tmp;
 
 				// preload A vals
 				if ((entry_idx+1)<tileNnz[i+1]){
-					r_offset_tmp = a_idx_lds[entry_idx+1-tileNnz[i]] & 240;     // .. & 1111 0000
-					c_offset_tmp = a_idx_lds[entry_idx+1-tileNnz[i]] & 15;      // .. & 0000 1111
+                    uint8_t a_idx_tmp;
+                    lds8(a_idx_tmp, a_idx_lds + (entry_idx+1-tileNnz[i])*sizeof(uint8_t));
+					//r_offset_tmp = a_idx_lds[entry_idx+1-tileNnz[i]] & 240;     // .. & 1111 0000
+					//c_offset_tmp = a_idx_lds[entry_idx+1-tileNnz[i]] & 15;      // .. & 0000 1111
+					r_offset_tmp = a_idx_tmp & 240;     // .. & 1111 0000
+					c_offset_tmp = a_idx_tmp & 15;      // .. & 0000 1111
 					//a_reg[(entry_idx+1)%2] = a_vals_lds[r_offset_tmp*16+c_offset_tmp];
-			        lds32(&a_reg[(entry_idx+1)%2], a_vals_lds + (r_offset_tmp*16+c_offset_tmp)*sizeof(float));
+			        lds32(a_reg[(entry_idx+1)%2], a_vals_lds + (r_offset_tmp*16+c_offset_tmp)*sizeof(float));
 				}
 				// bits to mark C rows to write back
 				// here if condition can be removed
