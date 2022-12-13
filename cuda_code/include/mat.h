@@ -4,10 +4,12 @@
 #include <iostream>
 #include <algorithm>
 #define DataType float
+#define DEBUG
 using namespace std;
 class mat{
 public:
 	int m,k;
+    int n;
 	int nnz;
 	int pos;
 	int tm,tn;
@@ -20,12 +22,14 @@ public:
 	void print2();
 	void csr2tile();
 
-private:
 	std::vector<unsigned int> tileRowPtr;
 	std::vector<unsigned int> nnzPtr;
-	std::vector<unsigned int> rowOffset;
-	std::vector<unsigned int> tileColIdx;
+	std::vector<unsigned int> tileLeftColIdx;
+    std::vector<char> rc_Offset;
 	std::vector<DataType> newVals;
+    
+    std::vector<unsigned int> rowOffset;
+	std::vector<unsigned int> tileColIdx;
 
 	// regular sparse-tile storage
 	std::vector<unsigned int> rgl_tileRowPtr;

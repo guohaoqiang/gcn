@@ -9,6 +9,6 @@
 #include "common.h"
 #include "cufuse.cuh"
 #include "cusp.cuh"
-#include "flex.h"
+#include "flex.cuh"
 
 #endif /* MAIN_H */

@@ -6,13 +6,16 @@ mat::mat(std::vector<unsigned int>& r,
 		int h, 
 		int kk,
 		int nz):m(h),k(kk),nnz(nz),rowPtr(r),colIdx(c),vals(v){
+            n = m;
 			tm = 4,tn = 4;
 			tileRowPtr.push_back(0);
 			nnzPtr.push_back(0);
+            
+            rc_Offset.resize(nnz);
+			newVals.resize(nnz);
 
 			rowOffset.resize(nnz);
 			tileColIdx.resize(nnz);
-			newVals.resize(nnz);
 			// the length of nnzPtr is unknown so far
 
 			pos = 0; 
@@ -55,11 +58,17 @@ void mat::print2(){
 	for (int i=0; i<nnzPtr.size(); ++i)
 		std::cout<<nnzPtr[i]<<" ";
 	std::cout<<std::endl;
+	for (int i=0; i<tileLeftColIdx.size(); ++i)
+		std::cout<<tileLeftColIdx[i]<<" ";
+	std::cout<<std::endl;
+    std::cout<<"------- tile elements: -------"<<std::endl;
 	for (int i=0; i<rowOffset.size(); ++i)
 		std::cout<<rowOffset[i]<<" ";
 	std::cout<<std::endl;
 	for (int i=0; i<tileColIdx.size(); ++i)
 		std::cout<<tileColIdx[i]<<" ";
+	for (int i=0; i<rc_Offset.size(); ++i)
+		std::cout<<rc_Offset[i]<<" ";
 	std::cout<<std::endl;
 	for (int i=0; i<newVals.size(); ++i)
 		std::cout<<newVals[i]<<" ";
@@ -172,13 +181,17 @@ void mat::csr2flex(int ridx){
 			
 			// c check is necessary because it constraines nze within the i-th row
 			while (c<rowPtr[i+1] && colIdx[c]>=left && colIdx[c]<right){
+                char rc = 0;
 				// currently, it is not 4-bit
 				rowOffset[pos] = i-rowStart;
+                rc |= (15+rowOffset[pos]);
 
 				// real col idx
 				tileColIdx[pos] = cIdx[i-rowStart];
+                rc |= (tileColIdx[pos]-left);
 				// nze values
 				newVals[pos] = vals[c];
+                rc_Offset[pos] = rc;
 
 				cIdx[i-rowStart] = colIdx[++c];
 				pos++;
@@ -188,6 +201,7 @@ void mat::csr2flex(int ridx){
 			}
 		}
 		nnzPtr.push_back(nnzPtr.back()+nnzInTile);
+        tileLeftColIdx.push_back(left);
 		// update left and right bound for next tile
 		left = n;
 		for (int i=rowStart; i<rowEnd; ++i){
