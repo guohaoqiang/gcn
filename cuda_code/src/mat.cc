@@ -67,8 +67,9 @@ void mat::print2(){
 	std::cout<<std::endl;
 	for (int i=0; i<tileColIdx.size(); ++i)
 		std::cout<<tileColIdx[i]<<" ";
+    std::cout<<std::endl<<"rc:"<<std::endl;
 	for (int i=0; i<rc_Offset.size(); ++i)
-		std::cout<<rc_Offset[i]<<" ";
+		std::cout<<(int)rc_Offset[i]<<" ";
 	std::cout<<std::endl;
 	for (int i=0; i<newVals.size(); ++i)
 		std::cout<<newVals[i]<<" ";
@@ -184,7 +185,7 @@ void mat::csr2flex(int ridx){
                 char rc = 0;
 				// currently, it is not 4-bit
 				rowOffset[pos] = i-rowStart;
-                rc |= (15+rowOffset[pos]);
+                rc |= (rowOffset[pos]<<4);
 
 				// real col idx
 				tileColIdx[pos] = cIdx[i-rowStart];

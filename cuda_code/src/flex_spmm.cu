@@ -1,16 +1,5 @@
 #include "../include/flex_spmm.cuh"
 __device__ __forceinline__
-uint8_t smem_u8addr(const void *smem_ptr) {
-    uint8_t addr;
-    asm ("{.reg .u64 u64addr;\n"
-         " cvta.to.shared.u64 u64addr, %1;\n"
-         " cvt.u8.u64 %0, u64addr;}\n"
-         : "=r"(addr)
-         : "l"(smem_ptr)
-    );
-    return addr;
-}
-__device__ __forceinline__
 uint32_t smem_u32addr(const void *smem_ptr) {
     uint32_t addr;
     asm ("{.reg .u64 u64addr;\n"
@@ -31,19 +20,21 @@ void stg32(const float &reg, void *ptr, bool guard) {
     );
 }
 __device__ __forceinline__
-void sts8(const uint8_t &reg, const uint8_t &addr) {
+void sts8(const uint8_t &reg, const uint32_t &addr) {
     asm volatile (
         "st.shared.u8 [%0], %1;\n"
-        : : "r"(addr), "r"(reg)
+        : : "r"(addr), "r"((int)reg)
     );
 }
 __device__ __forceinline__
-void lds8(uint8_t &reg, const uint8_t &addr) {
+void lds8(uint8_t &reg, const uint32_t &addr) {
+    int temp = reg;
     asm volatile (
         "ld.shared.u8 %0, [%1];\n"
-        : "=r"(reg)
+        : "=r"(temp)
         : "r"(addr)
     );
+    reg = temp;
 }
 __device__ __forceinline__
 void sts32(const float &reg, const uint32_t &addr) {
@@ -85,7 +76,6 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 				int k,
 				float* mat_b,
                 float* mat_c){
-	
 	const uint32_t WARPSZ = 32;
 	const uint32_t lane_id = threadIdx.x % WARPSZ;
 	const uint32_t warp_id = threadIdx.x / WARPSZ;
@@ -125,8 +115,8 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 
 	uint32_t a_vals_sts = smem_u32addr(a_vals_smem);
 	uint32_t a_vals_lds = smem_u32addr(a_vals_smem);
-	uint8_t a_idx_sts = smem_u8addr(a_idx_smem);
-	uint8_t a_idx_lds = smem_u8addr(a_idx_smem);
+	uint32_t a_idx_sts = smem_u32addr(a_idx_smem);
+	uint32_t a_idx_lds = smem_u32addr(a_idx_smem);
 
 	// ************ load A tile ( && B rows required by first tile) from glb mem to shared memory (registers) *********************************************
 	// row_flag[0]: bits represent existance of B rows, determined by col idx of A entrys 
@@ -137,6 +127,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 	// both tileNNz and r_c_offfset have good locality, so no need to optimize their memory access behavior? 
 	#define FULL_MASK 0xffffffff
 	uint32_t steps = 1;
+    //printf("kernel begins ...\n");	
 	for (uint32_t entry_idx = tileNnz[warp_tileStart_id]; entry_idx<tileNnz[warp_tileStart_id+1]; entry_idx += steps){
 		
 		if (tileNnz[warp_tileStart_id+1]-entry_idx>=32){         // if more than 32 non-zero entrys left in current tile
@@ -279,7 +270,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 	
 	// iterate tiles assigned to the current block
 	for (uint32_t i=warp_tileStart_id; i<tile_ref[2]; i += warps){
-		uint32_t nnz_cur_tile = tileNnz[i+1]-tileNnz[i];
+	    int  nnz_cur_tile = tileNnz[i+1]-tileNnz[i];
 		
 		// ************ load B rows required by "next tile" from glb mem to shmem **********
 		// both tileNNz and r_c_offfset have good locality, so no need to optimize their memory access behavior?
@@ -414,7 +405,9 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		// ************************************************************************************
 
 	    float a_reg[2] = {0.0};
-		if (nnz_cur_tile < 1*16*16){
+		if (nnz_cur_tile < 1*4*4){
+            printf("Using CUDA cores\n");
+            printf("tileID = %d, nnz = %d\n",i,nnz_cur_tile);
 			// Cuda cores
 			
 			// visit all nze in the current tile
@@ -460,6 +453,8 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			a_vals_lds ^= 0x0500;
 			a_idx_lds  ^= 0x0500;
 		}else{
+            printf("Using tensor cores\n");
+            printf("tileID = %d, nnz = %d\n",i,nnz_cur_tile);
 			// Tensor cores
 		}
 	}
@@ -472,6 +467,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		if (lane_offset<min(blockIdx.y*32+32, k)){
 			for (uint32_t j=0; j<16 && (row_flag[1] & (1<<j)); ++j){
 				atomicAdd(&c_mat_sh[j*32+lane_id], res[j]);
+                //printf("@466 : r = %d, c = %d, val = %f\n",j,lane_id,res[j]);
 			}
 		}
 		__syncthreads();
@@ -487,6 +483,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 				atomicAdd(&mat_c[r*k+lane_offset], res[i]);
 			}
 		}
+        //printf("Not acc in shared mem\n");	
 	}else{
 		// transfer results from shared mem to glb mem
 		if((tile_ref[1] && (tile_ref[1]==tile_ref[0])) || tile_ref[1]==tile_ref[2]){
@@ -500,6 +497,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					atomicAdd(&mat_c[r*k+lane_offset], c_mat_sh[i*32+lane_id]);
 				}
 			}
+            //printf("Acc1 in shared mem\n");	
 		}else{
 			// global memory write, in coalesced way
 			// transfer results from shared to glb
@@ -509,7 +507,9 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 				for (uint32_t i=warp_id; i<16 && (row_flag[1] & (1<<i)); i+=WARPS){
 					uint32_t r = tile_ref[1] + i;
 					mat_c[r*k+lane_offset] = c_mat_sh[i*32+lane_id];
+                    //printf("r = %d, c = %d, val = %f\n",r,lane_offset,mat_c[r*k+lane_offset]);
 				}
+                //printf("Acc2 in shared mem\n");	
 			}	
 		}
 	}

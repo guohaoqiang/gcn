@@ -57,7 +57,7 @@ void flexspgemm(mat& data){
 	cudaMalloc(&d_vals, data.newVals.size()*sizeof(int));
     
     // Matrix B
-    float* mat_b;
+    float* mat_b = (float*)malloc(data.m*data.k*sizeof(float));
     for (size_t i=0; i<data.m; ++i){
         for (size_t j=0; j<data.k; ++j){
             mat_b[i*data.k+j] = 1.0;
@@ -85,6 +85,7 @@ void flexspgemm(mat& data){
 
 	// each thread block has 2 warps
 	dim3 grid(block_tileStart_idx.size()-1, (data.k+31)/32);
+    LOG(INFO) << "Ahead the kernel ...";
 	flexspgemm_cuda_reg_pre<<<grid, 64>>>(d_tileNnz,
                                         d_block_tileStart_idx,
                                         d_warp_tileRow_idx,
@@ -95,13 +96,22 @@ void flexspgemm(mat& data){
                                         data.k,
                                         d_mat_b,
                                         d_mat_c);
+    LOG(INFO) << "After the kernel ...";
 	
     float* h_res_c = (float*)malloc(data.m*data.k*sizeof(float)); 
     // transfer data to host
+    LOG(INFO) << "Transfer results back ...";
 	cudaMemcpy(h_res_c, d_mat_c, data.m*data.k*sizeof(float), cudaMemcpyDeviceToHost);
 
     // verify results
+    LOG(INFO) << "Verify result accuracy ...";
     float* h_ref_c = (float*)malloc(data.m*data.k*sizeof(float)); 
+    std::cout<<h_res_c[0]<<std::endl;
+    std::cout<<h_res_c[1]<<std::endl;
+    std::cout<<h_res_c[3]<<std::endl;
+    std::cout<<h_ref_c[0]<<std::endl;
+    std::cout<<h_ref_c[1]<<std::endl;
+    std::cout<<h_ref_c[3]<<std::endl;
     for (size_t i=0; i<data.m; ++i){
         for (size_t j=0; j<data.k; ++j){
             if (abs(h_ref_c[i*data.k+j]-h_res_c[i*data.k+j])>=0.0001){
