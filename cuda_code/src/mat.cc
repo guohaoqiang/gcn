@@ -7,7 +7,7 @@ mat::mat(std::vector<unsigned int>& r,
 		int kk,
 		int nz):m(h),k(kk),nnz(nz),rowPtr(r),colIdx(c),vals(v){
             n = m;
-			tm = 4,tn = 4;
+			tm = TM,tn = TN;
 			tileRowPtr.push_back(0);
 			nnzPtr.push_back(0);
             
@@ -55,6 +55,7 @@ void mat::print2(){
 	for (int i=0; i<tileRowPtr.size(); ++i)
 		std::cout<<tileRowPtr[i]<<" ";
 	std::cout<<std::endl;
+    /*
 	for (int i=0; i<nnzPtr.size(); ++i)
 		std::cout<<nnzPtr[i]<<" ";
 	std::cout<<std::endl;
@@ -74,6 +75,7 @@ void mat::print2(){
 	for (int i=0; i<newVals.size(); ++i)
 		std::cout<<newVals[i]<<" ";
 	std::cout<<std::endl;
+    */
 #endif
 	std::cout<<"Flex Tiles: "<<nnzPtr.size()-1<<std::endl;
 }
@@ -93,6 +95,7 @@ void mat::csr2tile(){
 	int tileRows = (m+tm-1)/tm;
 	//tileRowPtr.resize(tileRows+1);
 
+    std::cout<<"@98:"<<tileRows<<std::endl;
 	for (int i=0; i<tileRows; ++i){
 		csr2flex(i);
 		//csr2regular(i);
@@ -172,8 +175,10 @@ void mat::csr2flex(int ridx){
 	// right bound (exclusive)
 	unsigned int right = min((int)left + tn, n);
 	int nnzInRows = 0;
+    int tiles_in_cur_row = 0;
 	while (pos<rowPtr[rowEnd]){
 		int nnzInTile = 0;
+        tiles_in_cur_row++;
 		// collect tiles in the tile-row
 		for (int i=rowStart; i<rowEnd; ++i){
 			// absolute position of the nze in csr, idx = base + offset
@@ -214,5 +219,6 @@ void mat::csr2flex(int ridx){
 		}
 		right = min((int)left + tn, n);
 	}
-	tileRowPtr.push_back(tileRowPtr.back()+nnzInRows);
+	//tileRowPtr.push_back(tileRowPtr.back()+nnzInRows);
+	tileRowPtr.push_back(tileRowPtr.back()+tiles_in_cur_row);
 }

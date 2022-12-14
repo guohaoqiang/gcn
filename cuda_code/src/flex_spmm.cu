@@ -271,6 +271,12 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 	// iterate tiles assigned to the current block
 	for (uint32_t i=warp_tileStart_id; i<tile_ref[2]; i += warps){
 	    int  nnz_cur_tile = tileNnz[i+1]-tileNnz[i];
+        if (blockIdx.x == 0){
+            //printf("Using CUDA cores\n");
+            //printf("warps = %d\n",warps);
+            //printf("tileref[0] = %d,tileref[0] = %d,tileref[0] = %d\n",tile_ref[0],tile_ref[1],tile_ref[2]);
+            printf("tileID = %d, nnz = %d\n",i,nnz_cur_tile);
+        }
 		
 		// ************ load B rows required by "next tile" from glb mem to shmem **********
 		// both tileNNz and r_c_offfset have good locality, so no need to optimize their memory access behavior?
@@ -406,9 +412,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 
 	    float a_reg[2] = {0.0};
 		if (nnz_cur_tile < 1*4*4){
-            printf("Using CUDA cores\n");
-            printf("tileID = %d, nnz = %d\n",i,nnz_cur_tile);
-			// Cuda cores
+            // Cuda cores
 			
 			// visit all nze in the current tile
 			// both tileNNz and r_c_offfset have good locality, so no need to optimize their memory access behavior?

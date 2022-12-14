@@ -9,7 +9,6 @@ void convert(DataLoader& input){
     flexspgemm(data);
     
 }
-
 void flexspgemm(mat& data){
 	//uint32_t row_tiles = (data.m+tm-1)/tm;
 	uint32_t row_tiles = (data.m+4-1)/4;
@@ -25,7 +24,7 @@ void flexspgemm(mat& data){
 		for (size_t k=0; k<blocks_req; ++k){
 			block_tileStart_idx.push_back(data.tileRowPtr[i] + k*workload_per_block);
 			// tile row idx for tiles assigned to each thread block
-			warp_tileRow_idx.push_back(i);
+			warp_tileRow_idx.push_back(i*TM);
 		}
 	}
 	block_tileStart_idx.push_back(data.tileRowPtr.back());
@@ -86,7 +85,12 @@ void flexspgemm(mat& data){
 	// each thread block has 2 warps
 	dim3 grid(block_tileStart_idx.size()-1, (data.k+31)/32);
     LOG(INFO) << "Ahead the kernel ...";
-	flexspgemm_cuda_reg_pre<<<grid, 64>>>(d_tileNnz,
+    std::cout<<"block_tileStart_idx:"<<std::endl;
+    print(block_tileStart_idx);
+    std::cout<<"warp_tileRow_idx:"<<std::endl;
+    print(warp_tileRow_idx);
+	
+    flexspgemm_cuda_reg_pre<<<grid, 64>>>(d_tileNnz,
                                         d_block_tileStart_idx,
                                         d_warp_tileRow_idx,
                                         d_tileColIdx,
@@ -96,6 +100,7 @@ void flexspgemm(mat& data){
                                         data.k,
                                         d_mat_b,
                                         d_mat_c);
+    
     LOG(INFO) << "After the kernel ...";
 	
     float* h_res_c = (float*)malloc(data.m*data.k*sizeof(float)); 

@@ -1,5 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H 
+#define TM 4
+#define TN 4
 #include <cuda_runtime.h> // cudaMalloc, cudaMemcpy, etc.
 #include <cublas_v2.h>       // cuSgemm
 #include <cusparse.h>         // cusparseSpMM

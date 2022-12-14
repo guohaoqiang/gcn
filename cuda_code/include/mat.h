@@ -3,6 +3,7 @@
 #include <vector>
 #include <iostream>
 #include <algorithm>
+#include "common.h"
 #define DataType float
 #define DEBUG
 using namespace std;
