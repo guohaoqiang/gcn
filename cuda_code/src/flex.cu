@@ -79,7 +79,7 @@ void flexspgemm(mat& data){
 	cudaMemcpy(d_tileColIdx, data.tileLeftColIdx.data(), data.tileLeftColIdx.size()*sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_r_c_Offset, data.rc_Offset.data(), data.rc_Offset.size()*sizeof(char), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_vals, data.newVals.data(), data.newVals.size()*sizeof(float), cudaMemcpyHostToDevice);
-	//cudaMemcpy(d_mat_b, mat_b, data.m*data.k*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_mat_b, mat_b, data.m*data.k*sizeof(float), cudaMemcpyHostToDevice);
 	//cudaMemcpy(d_mat_c, mat_c, data.m*data.k*sizeof(float), cudaMemcpyHostToDevice);
 
 	// each thread block has 2 warps
@@ -111,16 +111,10 @@ void flexspgemm(mat& data){
     // verify results
     LOG(INFO) << "Verify result accuracy ...";
     float* h_ref_c = (float*)malloc(data.m*data.k*sizeof(float)); 
-    std::cout<<h_res_c[0]<<std::endl;
-    std::cout<<h_res_c[1]<<std::endl;
-    std::cout<<h_res_c[3]<<std::endl;
-    std::cout<<h_ref_c[0]<<std::endl;
-    std::cout<<h_ref_c[1]<<std::endl;
-    std::cout<<h_ref_c[3]<<std::endl;
     for (size_t i=0; i<data.m; ++i){
         for (size_t j=0; j<data.k; ++j){
             if (abs(h_ref_c[i*data.k+j]-h_res_c[i*data.k+j])>=0.0001){
-                std::cout<<"ref["<<i<<"]["<<j<<"]"<<h_ref_c[i*data.k+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]"<<h_res_c[i*data.k+j]<<std::endl;
+                std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*data.k+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*data.k+j]<<std::endl;
             }
         }
     }

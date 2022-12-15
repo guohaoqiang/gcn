@@ -132,7 +132,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		
 		if (tileNnz[warp_tileStart_id+1]-entry_idx>=32){         // if more than 32 non-zero entrys left in current tile
 			int rc_idx = r_c_Offset[entry_idx+lane_id]; // in coalesced way
-			uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
+			uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
 			uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 			// load a to shared mem
 			uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
@@ -164,7 +164,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			steps = 32;
 		}else if (tileNnz[warp_tileStart_id+1]-entry_idx>=16){
 			int rc_idx = r_c_Offset[entry_idx+lane_id]; // in coalesced way
-			uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
+			uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
 			uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 			//uint32_t mask = __ballot_sync(FULL_MASK, entry_idx<tileNnz[warp_tileStart_id+1]);
 			//uint32_t act_thds = __popc(mask);
@@ -199,7 +199,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			steps = 16;
 		}else if (tileNnz[warp_tileStart_id+1]-entry_idx>=8){
 			int rc_idx = r_c_Offset[entry_idx+lane_id]; // in coalesced way
-			uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
+			uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
 			uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 			//uint32_t mask = __ballot_sync(FULL_MASK, entry_idx<tileNnz[warp_tileStart_id+1]);
 			//uint32_t act_thds = __popc(mask);
@@ -233,13 +233,17 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			steps = 8;
 		}else{
 			int rc_idx = r_c_Offset[entry_idx];   // in coalesced way
-			uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
+			uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
 			uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 
 			// load a to shared mem
 			uint8_t aVal_idx_tmp = r_c_Offset[entry_idx];
 			sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
             float aVal_tmp = vals[entry_idx];
+            if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                //printf("a_idx = %d\n",rc_idx);
+                //printf("r_offset = %d, c_offset = %d, aVal_tmp = %f\n",r_offset,c_offset,aVal_tmp);
+            }
 			sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
 			// the i-th bit represents the i-th B row is alrealdy loaded in shared memory
@@ -254,6 +258,9 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					// matrix B is in row major
 					// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
 					b_reg[warp_tileStart_id%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+                    if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                        printf("@262:   b_col = %d, b_reg[%d][%d] = %f\n",entry_col_idx,warp_tileStart_id%2,c_offset,b_reg[warp_tileStart_id%2][c_offset]);
+                    }
 				}
 			}
 			steps = 1;
@@ -271,11 +278,9 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 	// iterate tiles assigned to the current block
 	for (uint32_t i=warp_tileStart_id; i<tile_ref[2]; i += warps){
 	    int  nnz_cur_tile = tileNnz[i+1]-tileNnz[i];
-        if (blockIdx.x == 0){
-            //printf("Using CUDA cores\n");
-            //printf("warps = %d\n",warps);
+        if (blockIdx.x==11 && warp_id==0 && lane_id==0){
             //printf("tileref[0] = %d,tileref[0] = %d,tileref[0] = %d\n",tile_ref[0],tile_ref[1],tile_ref[2]);
-            printf("tileID = %d, nnz = %d\n",i,nnz_cur_tile);
+            //printf("tileID = %d, nnz = %d\n",i,nnz_cur_tile);
         }
 		
 		// ************ load B rows required by "next tile" from glb mem to shmem **********
@@ -286,12 +291,12 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 				
 				if (tileNnz[i+warps+1]-entry_idx>=32){
 					int rc_idx = r_c_Offset[entry_idx+lane_id]; // in coalesced way
-					uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
+					uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
 					uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 
 					// load a to shared mem
 			        uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
-			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[i+warps])*sizeof(uint8_t));
                     float aVal_tmp = vals[entry_idx+lane_id];
 			        sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
@@ -317,12 +322,12 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					steps = 32;
 				}else if (tileNnz[i+warps+1]-entry_idx>=16){
 					int rc_idx = r_c_Offset[entry_idx+lane_id]; // in coalesced way
-					uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
+					uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
 					uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 
 					// load a to shared mem
 			        uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
-			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[i+warps])*sizeof(uint8_t));
                     float aVal_tmp = vals[entry_idx+lane_id];
 			        sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
@@ -348,12 +353,12 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					steps = 16;
 				}else if (tileNnz[i+warps+1]-entry_idx>=8){
 					int rc_idx = r_c_Offset[entry_idx+lane_id]; // in coalesced way
-					uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
+					uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
 					uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 
 					// load a to shared mem
 			        uint8_t aVal_idx_tmp = r_c_Offset[entry_idx+lane_id];
-			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[i+warps])*sizeof(uint8_t));
                     float aVal_tmp = vals[entry_idx+lane_id];
 			        sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
@@ -379,14 +384,18 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					steps = 8;
 				}else{
 					int rc_idx = r_c_Offset[entry_idx];   // broadcast
-					uint32_t r_offset = rc_idx & 240;     // .. & 1111 0000
+					uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
 					uint32_t c_offset = rc_idx & 15;      // .. & 0000 1111
 					// load a to shared mem
 			        uint8_t aVal_idx_tmp = r_c_Offset[entry_idx];
-			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+			        sts8(aVal_idx_tmp, a_idx_sts + (entry_idx-tileNnz[i+warps])*sizeof(uint8_t));
                     float aVal_tmp = vals[entry_idx];
 			        sts32(aVal_tmp, a_vals_sts + (r_offset*16+c_offset)*sizeof(float));
 
+                    if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                        //printf("a_idx = %d\n",rc_idx);
+                        //printf("@394:   r_offset = %d, c_offset = %d, aVal_tmp = %f\n",r_offset,c_offset,aVal_tmp);
+                    }
 					// load b to registers
 					// the i-th bit represents the i-th B row is alrealdy loaded in shared memory
 					if ((row_flag[0] & (1<<c_offset)) == 0 ){
@@ -411,7 +420,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		// ************************************************************************************
 
 	    float a_reg[2] = {0.0};
-		if (nnz_cur_tile < 1*4*4){
+		if (nnz_cur_tile < 1*TM*TN){
             // Cuda cores
 			
 			// visit all nze in the current tile
@@ -420,8 +429,13 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
             lds8(a_idx_tmp, a_idx_lds + 0*sizeof(uint8_t));
 			//uint32_t r_offset = a_idx_lds[0] & 240;     // .. & 1111 0000
 			//uint32_t c_offset = a_idx_lds[0] & 15;      // .. & 0000 1111
-			uint32_t r_offset = a_idx_tmp & 240;     // .. & 1111 0000
+			uint32_t r_offset = (a_idx_tmp & 240)>>4;     // .. & 1111 0000
 			uint32_t c_offset = a_idx_tmp & 15;      // .. & 0000 1111
+            
+            if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                //printf("a_idx_tmp = %d\n",(int)a_idx_tmp);
+                //printf("tileID = %d, r_offset = %d, c_offset = %d\n",i,r_offset,c_offset);
+            }
 			//a_reg[tileNnz[i]%2] = a_vals_lds[r_offset*16+c_offset];
 			lds32(a_reg[tileNnz[i]%2], a_vals_lds + (r_offset*16+c_offset)*sizeof(float));
 			for (uint32_t entry_idx = tileNnz[i]; entry_idx<tileNnz[i+1]; ++entry_idx){
@@ -433,7 +447,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
                     lds8(a_idx_tmp, a_idx_lds + (entry_idx+1-tileNnz[i])*sizeof(uint8_t));
 					//r_offset_tmp = a_idx_lds[entry_idx+1-tileNnz[i]] & 240;     // .. & 1111 0000
 					//c_offset_tmp = a_idx_lds[entry_idx+1-tileNnz[i]] & 15;      // .. & 0000 1111
-					r_offset_tmp = a_idx_tmp & 240;     // .. & 1111 0000
+					r_offset_tmp = (a_idx_tmp & 240)>>4;     // .. & 1111 0000
 					c_offset_tmp = a_idx_tmp & 15;      // .. & 0000 1111
 					//a_reg[(entry_idx+1)%2] = a_vals_lds[r_offset_tmp*16+c_offset_tmp];
 			        lds32(a_reg[(entry_idx+1)%2], a_vals_lds + (r_offset_tmp*16+c_offset_tmp)*sizeof(float));
@@ -444,11 +458,17 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					row_flag[1] |= (1<<r_offset);
 				}
 				
+                if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                    //printf("@459: tileID = %d, r_offset = %d, c_offset = %d, a_reg[%d] = %f\n",i,r_offset,c_offset,entry_idx%2,a_reg[entry_idx%2]);
+                }
 				
 				uint32_t lane_offset = blockIdx.y*32 + lane_id;
 				if (lane_offset<min(blockIdx.y*32+32, k)){
 					// multiplication
 					// accumulate in local registers
+                    if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                        printf("@467:   tileID = %d, b_reg[%d][%d] = %f\n",i,i%2,c_offset, b_reg[i%2][c_offset]);
+                    }
 					res[r_offset] += a_reg[entry_idx%2] * b_reg[i%2][c_offset];	
 				}
 				r_offset = r_offset_tmp;
