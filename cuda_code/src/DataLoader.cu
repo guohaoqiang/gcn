@@ -72,8 +72,8 @@ DataLoader::DataLoader(const std::string& data_path, const int di, bool genXW):d
         if (alloc()){
             LOG(INFO) << "Initialize X & W ...";
             for (int i=0; i<n*dim; ++i){
-                //cpuX[i] = (float)rand()/RAND_MAX;
-                cpuX[i] = 1;
+                cpuX[i] = (float)rand()/RAND_MAX;
+                //cpuX[i] = 1;
             }
             for (int i=0; i<c*dim; ++i){
                 cpuW[i] = (float)rand()/RAND_MAX;
@@ -118,7 +118,8 @@ bool DataLoader::alloc(){
     CUDA_CHECK(cudaMalloc(&gpuX, sizeof(T) * n * dim));
     CUDA_CHECK(cudaMalloc(&gpuW, sizeof(T) * c * dim));
     CUDA_CHECK(cudaMalloc(&gpuC, sizeof(T) * c * n));
-    CUDA_CHECK(cudaMalloc(&gpuRef1, sizeof(T) * c * n));
+    //CUDA_CHECK(cudaMalloc(&gpuRef1, sizeof(T) * c * n));
+    CUDA_CHECK(cudaMalloc(&gpuRef1, sizeof(T) * dim * n));
     CUDA_CHECK(cudaMalloc(&gpuRef2, sizeof(T) * c * n));
     return true;
 }

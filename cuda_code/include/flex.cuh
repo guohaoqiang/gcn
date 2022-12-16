@@ -7,9 +7,10 @@
 #include "flex_spmm.cuh"
 
 void convert(DataLoader& input);
+void cuSpgemm(DataLoader& input);
 
 
-void flexspgemm(mat& data);
+void flexspgemm(float* res, mat& data, float* mat_b);
 
 
 template<typename TP>

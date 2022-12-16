@@ -105,13 +105,20 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 	#define WARPS 2
 	#define ACC_SH  true
 	#if ACC_SH
-	__shared__ char smem[(8*16*16 + 512)*WARPS+16*32*4];
+	__shared__ char smem[(8*16*16 + 512)*WARPS+TM*32*4+4];
 	#else
-	__shared__ char smem[(8*16*16 + 512)*WARPS];
+	__shared__ char smem[(8*16*16 + 512)*WARPS+4];
 	#endif
 	float* a_vals_smem = reinterpret_cast<float *>(smem+warp_id*2560);                 // 2.5k
 	uint8_t* a_idx_smem = reinterpret_cast<uint8_t *>(smem+warp_id*2560 + 1024);
 	float* c_mat_sh = reinterpret_cast<float *>(smem+WARPS*2560);                     // two warps: 2 * 2.5k = 5k
+
+	#if ACC_SH
+    uint32_t* mark_c_rows = reinterpret_cast<uint32_t *>(smem+(8*16*16 + 512)*WARPS+TM*32*4);
+	#else
+    uint32_t* mark_c_rows = reinterpret_cast<uint32_t *>(smem+(8*16*16 + 512)*WARPS);
+    #endif
+    if (threadIdx.x==0) mark_c_rows[0] = 0;
 
 	uint32_t a_vals_sts = smem_u32addr(a_vals_smem);
 	uint32_t a_vals_lds = smem_u32addr(a_vals_smem);
@@ -157,7 +164,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					if (lane_offset<min(blockIdx.y*32+32, k)){
 						// matrix B is in row major
 						// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
-						b_reg[warp_tileStart_id%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+						b_reg[0][c_offset] = mat_b[entry_col_idx*k + lane_offset];
 					}
 				}
 			}
@@ -192,7 +199,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					if (lane_offset<min(blockIdx.y*32+32, k)){
 						// matrix B is in row major
 						// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
-						b_reg[warp_tileStart_id%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+						b_reg[0][c_offset] = mat_b[entry_col_idx*k + lane_offset];
 					}
 				}
 			}
@@ -226,7 +233,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 					if (lane_offset<min(blockIdx.y*32+32, k)){
 						// matrix B is in row major
 						// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
-						b_reg[warp_tileStart_id%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+						b_reg[0][c_offset] = mat_b[entry_col_idx*k + lane_offset];
 					}
 				}
 			}
@@ -257,9 +264,9 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 				if (lane_offset<min(blockIdx.y*32+32, k)){
 					// matrix B is in row major
 					// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
-					b_reg[warp_tileStart_id%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
-                    if (blockIdx.x==0 && warp_id==0 && lane_id==0){
-                        printf("@262:   b_col = %d, b_reg[%d][%d] = %f\n",entry_col_idx,warp_tileStart_id%2,c_offset,b_reg[warp_tileStart_id%2][c_offset]);
+					b_reg[0][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+                    if (blockIdx.x==1 && warp_id==1 && lane_id==0){
+                        //printf("@262:   b_col = %d, b_reg[%d][%d] = %f\n",entry_col_idx,warp_tileStart_id%2,c_offset,b_reg[warp_tileStart_id%2][c_offset]);
                     }
 				}
 			}
@@ -282,13 +289,13 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
             //printf("tileref[0] = %d,tileref[0] = %d,tileref[0] = %d\n",tile_ref[0],tile_ref[1],tile_ref[2]);
             //printf("tileID = %d, nnz = %d\n",i,nnz_cur_tile);
         }
-		
+		uint32_t b_double_buf_idx = (i-warp_tileStart_id)/warps%2;
 		// ************ load B rows required by "next tile" from glb mem to shmem **********
 		// both tileNNz and r_c_offfset have good locality, so no need to optimize their memory access behavior?
 		if (i+warps<tile_ref[2]){
 			//uint32_t boundry = tileNnz[i+warps+1]; 
 			for (uint32_t entry_idx = tileNnz[i+warps]; entry_idx<tileNnz[i+warps+1]; entry_idx += steps){
-				
+			    	
 				if (tileNnz[i+warps+1]-entry_idx>=32){
 					int rc_idx = r_c_Offset[entry_idx+lane_id]; // in coalesced way
 					uint32_t r_offset = (rc_idx & 240)>>4;     // .. & 1111 0000
@@ -315,7 +322,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 							if (lane_offset<min(blockIdx.y*32+32, k)){
 								// matrix B is in row major
 								// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
-								b_reg[(i+1)%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+								b_reg[(b_double_buf_idx+1)%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
 							}
 						}
 					}
@@ -346,7 +353,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 							if (lane_offset<min(blockIdx.y*32+32, k)){
 								// matrix B is in row major
 								// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
-								b_reg[(i+1)%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+								b_reg[(b_double_buf_idx+1)%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
 							}
 						}
 					}
@@ -377,7 +384,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 							if (lane_offset<min(blockIdx.y*32+32, k)){
 								// matrix B is in row major
 								// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
-								b_reg[(i+1)%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+								b_reg[(b_double_buf_idx+1)%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
 							}
 						}
 					}		
@@ -407,7 +414,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 						if (lane_offset<min(blockIdx.y*32+32, k)){
 							// matrix B is in row major
 							// b_mat_sh[warp_id*2 + warp_tileStart_id%2][c_offset*tn+lane_id] = mat_b[entry_col_idx*k + lane_offset];
-							b_reg[(i+1)%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+							b_reg[(b_double_buf_idx+1)%2][c_offset] = mat_b[entry_col_idx*k + lane_offset];
+                            if (blockIdx.x==1 && warp_id==1 && lane_id==0){
+                                //printf("@412:   b_col = %d, b_reg[%d][%d] = %f\n",entry_col_idx,(i+1)%2,c_offset,b_reg[(i+1)%2][c_offset]);
+                            }
 						}
 					}
 					steps = 1;
@@ -466,10 +476,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 				if (lane_offset<min(blockIdx.y*32+32, k)){
 					// multiplication
 					// accumulate in local registers
-                    if (blockIdx.x==0 && warp_id==0 && lane_id==0){
-                        printf("@467:   tileID = %d, b_reg[%d][%d] = %f\n",i,i%2,c_offset, b_reg[i%2][c_offset]);
+                    if (blockIdx.x==31 && warp_id==1 && lane_id==0){
+                        //printf("@473:   tileID = %d, row_flag[1] = %d, b_reg[%d][%d] = %f\n",i,row_flag[1],b_double_buf_idx,c_offset, b_reg[b_double_buf_idx][c_offset]);
                     }
-					res[r_offset] += a_reg[entry_idx%2] * b_reg[i%2][c_offset];	
+					res[r_offset] += a_reg[entry_idx%2] * b_reg[b_double_buf_idx][c_offset];	
 				}
 				r_offset = r_offset_tmp;
 				c_offset = c_offset_tmp;
@@ -482,6 +492,9 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			// Tensor cores
 		}
 	}
+    if (lane_id==0) atomicOr(&mark_c_rows[0], row_flag[1]);
+    __syncthreads();
+    row_flag[1] = mark_c_rows[0];
 	
 	if (ACC_SH){
 		// accumulate partial products on shared memory among warps within one thread block
@@ -489,9 +502,22 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		// here row_flags[1] helps to reduce atomicAdd
 		uint32_t lane_offset = blockIdx.y*32 + lane_id;
 		if (lane_offset<min(blockIdx.y*32+32, k)){
-			for (uint32_t j=0; j<16 && (row_flag[1] & (1<<j)); ++j){
-				atomicAdd(&c_mat_sh[j*32+lane_id], res[j]);
-                //printf("@466 : r = %d, c = %d, val = %f\n",j,lane_id,res[j]);
+            //if (blockIdx.x==2 && warp_id==0 && lane_id==0)
+            //    printf("TM = %d, row_flag[1] = %d\n",TM,row_flag[1]);
+			for (uint32_t j=0; j<TM; ++j){
+                if (blockIdx.x==1 && warp_id==1 && lane_id==0){
+                    //printf("@499: c_mat_h[%d] = %f\n",j*32+lane_id,res[j]);
+                }
+                if (row_flag[1] & (1<<j)){
+			//for (uint32_t j=0; j<TM && (row_flag[1] & (1<<j))!=0; ++j){
+				atomicAdd(&c_mat_sh[j*k+lane_id], res[j]);
+                if (blockIdx.x==5 && warp_id==0 && lane_id==0){
+                    printf("@505: c_mat_h[%d] = %f\n",j*32+lane_id,c_mat_sh[j*k+lane_id]);
+                }
+                if (blockIdx.x==5 && warp_id==1 && lane_id==0){
+                    printf("@508: c_mat_h[%d] = %f\n",j*32+lane_id,c_mat_sh[j*k+lane_id]);
+                }
+                }
 			}
 		}
 		__syncthreads();
@@ -503,33 +529,56 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		uint32_t lane_offset = blockIdx.y*32 + lane_id;
 		if (lane_offset<min(blockIdx.y*32+32, k)){
 			for (uint32_t i=0; i<16 && (row_flag[1] & (1<<i)); ++i){
-				uint32_t r = tile_ref[1] + i;
+				uint32_t r = warp_tileRow_idx[blockIdx.x] + i;
 				atomicAdd(&mat_c[r*k+lane_offset], res[i]);
 			}
 		}
         //printf("Not acc in shared mem\n");	
 	}else{
 		// transfer results from shared mem to glb mem
-		if((tile_ref[1] && (tile_ref[1]==tile_ref[0])) || tile_ref[1]==tile_ref[2]){
+		if((blockIdx.x && (warp_tileRow_idx[blockIdx.x]==warp_tileRow_idx[blockIdx.x-1])) 
+                || warp_tileRow_idx[blockIdx.x]==warp_tileRow_idx[blockIdx.x+1]){
+        if (blockIdx.x==5 && warp_id==0 && lane_id==0){
+            //printf("@526: tile_ref[0] = %d, tile_ref[1] = %d, tile_ref[2] = %d\n",tile_ref[0],tile_ref[1],tile_ref[2]);
+            printf("@527: warp_tileRow_idx[blockIdx.x-1] = %d, warp_tileRow_idx[blockIdx.x] = %d, warp_tileRow_idx[blockIdx.x+1] = %d\n",warp_tileRow_idx[blockIdx.x-1],warp_tileRow_idx[blockIdx.x],warp_tileRow_idx[blockIdx.x+1]);
+        }
 			// multi blocks work on one row tiles
 			// global memory atomic write, in coalesced way
 			uint32_t lane_offset = blockIdx.y*32 + lane_id;
 			if (lane_offset<min(blockIdx.y*32+32, k)){
+                    if (blockIdx.x==5 && warp_id==1 && lane_id==0)
+                        printf("@538: TM = %d, row_flag[1] = %d\n",TM,row_flag[1]);
 				// each warp transfer one row segment of C
-				for (uint32_t i=warp_id; i<16 && (row_flag[1] & (1<<i)); i+=WARPS){
-					uint32_t r = tile_ref[1] + i;
-					atomicAdd(&mat_c[r*k+lane_offset], c_mat_sh[i*32+lane_id]);
+				//for (uint32_t i=warp_id; i<16 && (row_flag[1] & (1<<i)); i+=WARPS){
+				for (uint32_t i=warp_id; i<TM; i+=WARPS){
+                    if (row_flag[1] & (1<<i)){
+					    uint32_t r = warp_tileRow_idx[blockIdx.x] + i;
+					    atomicAdd(&mat_c[r*k+lane_offset], c_mat_sh[i*32+lane_id]);
+                        if (blockIdx.x==3 && warp_id==0 && lane_id==0){
+                            // printf("@544: c_sh[%d] = %f, mat_c[%d] = %f\n", i*32+lane_id, c_mat_sh[i*32+lane_id], r*k+lane_offset, mat_c[r*k+lane_offset]);
+                        }
+                        if (blockIdx.x==4 && warp_id==0 && lane_id==0){
+                            // printf("@547: c_sh[%d] = %f, mat_c[%d] = %f\n", i*32+lane_id, c_mat_sh[i*32+lane_id], r*k+lane_offset, mat_c[r*k+lane_offset]);
+                        }
+                        if (blockIdx.x==5 && warp_id==0 && lane_id==0){
+                            //printf("@551: c_sh[%d] = %f, mat_c[%d] = %f\n", i*32+lane_id, c_mat_sh[i*32+lane_id], r*k+lane_offset, mat_c[r*k+lane_offset]);
+                        }
+                        if (blockIdx.x==5 && warp_id==1 && lane_id==0){
+                            //printf("@554: c_sh[%d] = %f, mat_c[%d] = %f\n", i*32+lane_id, c_mat_sh[i*32+lane_id], r*k+lane_offset, mat_c[r*k+lane_offset]);
+                        }
+                    }
 				}
 			}
             //printf("Acc1 in shared mem\n");	
 		}else{
+            //printf("@551 ___________-----\n");
 			// global memory write, in coalesced way
 			// transfer results from shared to glb
 			uint32_t lane_offset = blockIdx.y*32 + lane_id;
 			if (lane_offset<min(blockIdx.y*32+32, k)){
 				// each warp transfer one row segment of C
 				for (uint32_t i=warp_id; i<16 && (row_flag[1] & (1<<i)); i+=WARPS){
-					uint32_t r = tile_ref[1] + i;
+					uint32_t r = warp_tileRow_idx[blockIdx.x] + i;
 					mat_c[r*k+lane_offset] = c_mat_sh[i*32+lane_id];
                     //printf("r = %d, c = %d, val = %f\n",r,lane_offset,mat_c[r*k+lane_offset]);
 				}
