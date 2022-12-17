@@ -115,6 +115,9 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 
 	#if ACC_SH
     uint32_t* mark_c_rows = reinterpret_cast<uint32_t *>(smem+(8*16*16 + 512)*WARPS+TM*32*4);
+    for (uint32_t i=warp_id; i<TM; i+=warps){
+        c_mat_sh[i*32+lane_id] = 0;
+    }
 	#else
     uint32_t* mark_c_rows = reinterpret_cast<uint32_t *>(smem+(8*16*16 + 512)*WARPS);
     #endif
@@ -245,7 +248,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 
 			// load a to shared mem
 			uint8_t aVal_idx_tmp = r_c_Offset[entry_idx];
-			sts8(aVal_idx_tmp, a_idx_sts + (entry_idx+lane_id-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
+			sts8(aVal_idx_tmp, a_idx_sts + (entry_idx-tileNnz[warp_tileStart_id])*sizeof(uint8_t));
             float aVal_tmp = vals[entry_idx];
             if (blockIdx.x==0 && warp_id==0 && lane_id==0){
                 //printf("a_idx = %d\n",rc_idx);
@@ -430,7 +433,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		// ************************************************************************************
 
 	    float a_reg[2] = {0.0};
-		if (nnz_cur_tile < 1*TM*TN){
+		if (nnz_cur_tile <= 1*TM*TN){
             // Cuda cores
 			
 			// visit all nze in the current tile
@@ -524,7 +527,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 	}
 	
 	// no need synchronization? because no corporation among warps
-	// __syncthreads();
+	//__syncthreads();
 	if (!ACC_SH){
 		uint32_t lane_offset = blockIdx.y*32 + lane_id;
 		if (lane_offset<min(blockIdx.y*32+32, k)){
@@ -577,9 +580,10 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 			uint32_t lane_offset = blockIdx.y*32 + lane_id;
 			if (lane_offset<min(blockIdx.y*32+32, k)){
 				// each warp transfer one row segment of C
-				for (uint32_t i=warp_id; i<16 && (row_flag[1] & (1<<i)); i+=WARPS){
+				for (uint32_t i=warp_id; i<TM && (row_flag[1] & (1<<i)); i+=WARPS){
 					uint32_t r = warp_tileRow_idx[blockIdx.x] + i;
 					mat_c[r*k+lane_offset] = c_mat_sh[i*32+lane_id];
+					//atomicAdd(&mat_c[r*k+lane_offset], c_mat_sh[i*32+lane_id]);
                     //printf("r = %d, c = %d, val = %f\n",r,lane_offset,mat_c[r*k+lane_offset]);
 				}
                 //printf("Acc2 in shared mem\n");	

@@ -72,8 +72,8 @@ DataLoader::DataLoader(const std::string& data_path, const int di, bool genXW):d
         if (alloc()){
             LOG(INFO) << "Initialize X & W ...";
             for (int i=0; i<n*dim; ++i){
-                cpuX[i] = (float)rand()/RAND_MAX;
-                //cpuX[i] = 1;
+                //cpuX[i] = (float)rand()/RAND_MAX;
+                cpuX[i] = 1;
             }
             for (int i=0; i<c*dim; ++i){
                 cpuW[i] = (float)rand()/RAND_MAX;
@@ -97,7 +97,8 @@ bool DataLoader::transfer(){
     CUDA_CHECK(cudaMemcpy(gpuX, &cpuX[0], sizeof(T)*n*dim, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(gpuW, &cpuW[0], sizeof(T)*dim*c, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemset(gpuC, 0, sizeof(T)*n*c));
-    CUDA_CHECK(cudaMemset(gpuRef1, 0, sizeof(T)*n*c));
+    //CUDA_CHECK(cudaMemset(gpuRef1, 0, sizeof(T)*n*c));
+    CUDA_CHECK(cudaMemset(gpuRef1, 0, sizeof(T)*n*dim));
     CUDA_CHECK(cudaMemset(gpuRef2, 0, sizeof(T)*n*c));
     LOG(INFO) << "A, X & W have transfered to gpu ...";
     return true;

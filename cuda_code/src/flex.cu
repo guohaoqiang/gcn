@@ -4,7 +4,7 @@ void convert(DataLoader& input){
     mat data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	data.csr2tile();
 	//data.print1();
-	//data.print2();
+	data.print2();
     
     float* host_mat_b = (float*)malloc(data.m*data.k*sizeof(float)); 
     for (size_t i=0; i<data.m*data.k; ++i){
@@ -13,20 +13,25 @@ void convert(DataLoader& input){
 
     float* h_res_c = (float*)malloc(data.m*data.k*sizeof(float)); 
     flexspgemm(h_res_c, data, host_mat_b);
+    cudaDeviceSynchronize();
     
     
     cuSpgemm(input);
     float* h_ref_c = (float*)malloc(data.m*data.k*sizeof(float)); 
     CUDA_CHECK(cudaMemcpy(h_ref_c, input.gpuRef1, sizeof(float)*data.m*data.k, cudaMemcpyDeviceToHost));
     // verify results
+    int count = 0;
     LOG(INFO) << "Verify result accuracy ...";
     for (size_t i=0; i<data.m; ++i){
         for (size_t j=0; j<data.k; ++j){
             if (abs(h_ref_c[i*data.k+j]-h_res_c[i*data.k+j])>=0.0001){
-                std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*data.k+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*data.k+j]<<std::endl;
+                count++;
+                if (i<128 && j==0)
+                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*data.k+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*data.k+j]<<std::endl;
             }
         }
     }
+    std::cout<<"Wrong results: "<<count<<std::endl;
 }
 void flexspgemm(float* h_res_c, mat& data, float* mat_b){
 	//uint32_t row_tiles = (data.m+tm-1)/tm;
