@@ -2,31 +2,51 @@
 
 void convert(DataLoader& input){
     mat data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
+    //std::cout<<data.vals[0]<<","<<data.vals[32]<<","<<data.vals[64]<<std::endl;
 	data.csr2tile();
+    //std::cout<<data.newVals[0]<<","<<data.newVals[32]<<","<<data.newVals[64]<<std::endl;
 	//data.print1();
-	data.print2();
+	//data.print2();
     
     float* host_mat_b = (float*)malloc(data.m*data.k*sizeof(float)); 
     for (size_t i=0; i<data.m*data.k; ++i){
         host_mat_b[i] = input.cpuX[i];
     }
 
-    float* h_res_c = (float*)malloc(data.m*data.k*sizeof(float)); 
-    flexspgemm(h_res_c, data, host_mat_b);
-    cudaDeviceSynchronize();
+    float cuspgemm_duration;
+    cudaEvent_t cuspgemm_start, cuspgemm_stop;
+	cudaEventCreate(&cuspgemm_start);
+	cudaEventCreate(&cuspgemm_stop);
     
+    cudaEventRecord(cuspgemm_start);
+    for (size_t i=0; i<10; ++i){
+        cuSpgemm(input);
+    }
+	cudaEventRecord(cuspgemm_stop);
+	cudaEventSynchronize(cuspgemm_stop);
+	cudaEventElapsedTime(&cuspgemm_duration, cuspgemm_start, cuspgemm_stop);
+    float t = cuspgemm_duration*(1e-3)/10;
+    std::cout<<"cuSpgemm time: "<<t<<" s "<<std::endl;
+    float gflops = (2*input.cpuA->nnz*input.dim)/(1e+9);
+    std::cout<<"cuSpgemm Throughput: "<<gflops/t<<" gflops/s "<<std::endl;
+    float gb = (float)((input.n+1 + 2*input.cpuA->nnz + 2*input.n*input.dim)*4)/(1e+9);
+    std::cout<<"cuSpgemm Bandwidth: "<<gb/t<<" GB/s "<<std::endl;
     
-    cuSpgemm(input);
     float* h_ref_c = (float*)malloc(data.m*data.k*sizeof(float)); 
     CUDA_CHECK(cudaMemcpy(h_ref_c, input.gpuRef1, sizeof(float)*data.m*data.k, cudaMemcpyDeviceToHost));
+    
+    float* h_res_c = (float*)malloc(data.m*data.k*sizeof(float)); 
+    flexspgemm(h_res_c, data, host_mat_b);
+    
+    //cudaDeviceSynchronize();
     // verify results
     int count = 0;
     LOG(INFO) << "Verify result accuracy ...";
     for (size_t i=0; i<data.m; ++i){
         for (size_t j=0; j<data.k; ++j){
-            if (abs(h_ref_c[i*data.k+j]-h_res_c[i*data.k+j])>=0.0001){
+            if (abs(h_ref_c[i*data.k+j]-h_res_c[i*data.k+j])>=0.001){
                 count++;
-                if (i<128 && j==0)
+                //if (i<8 && j==0) 
                     std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*data.k+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*data.k+j]<<std::endl;
             }
         }
@@ -35,7 +55,7 @@ void convert(DataLoader& input){
 }
 void flexspgemm(float* h_res_c, mat& data, float* mat_b){
 	//uint32_t row_tiles = (data.m+tm-1)/tm;
-	uint32_t row_tiles = (data.m+4-1)/4;
+	uint32_t row_tiles = (data.m+TM-1)/TM;
 
 	// workload_per_block: tiles assigned to a block
 	uint32_t workload_per_block = 4;
@@ -95,7 +115,7 @@ void flexspgemm(float* h_res_c, mat& data, float* mat_b){
     float* d_mat_c; 
 	cudaMalloc(&d_mat_c, data.m*data.k*sizeof(float));
     cudaMemset(d_mat_c, 0.0, data.m*data.k*sizeof(float));
-    
+    cudaDeviceSynchronize(); 
     
     
     // transfer data to device
@@ -116,7 +136,14 @@ void flexspgemm(float* h_res_c, mat& data, float* mat_b){
     //std::cout<<"warp_tileRow_idx:"<<std::endl;
     //print(warp_tileRow_idx);
 	
-    flexspgemm_cuda_reg_pre<<<grid, 64>>>(d_tileNnz,
+    float spgemm_duration;
+    cudaEvent_t spgemm_start, spgemm_stop;
+	cudaEventCreate(&spgemm_start);
+	cudaEventCreate(&spgemm_stop);
+    float elap_t = 0; 
+    for (size_t i=0; i<10; ++i){
+        cudaEventRecord(spgemm_start);
+        flexspgemm_cuda_reg_pre<<<grid, 64>>>(d_tileNnz,
                                         d_block_tileStart_idx,
                                         d_warp_tileRow_idx,
                                         d_tileColIdx,
@@ -125,12 +152,38 @@ void flexspgemm(float* h_res_c, mat& data, float* mat_b){
                                         d_vals,
                                         data.k,
                                         d_mat_b,
-                                        d_mat_c); 
+                                        d_mat_c);
+	    cudaEventRecord(spgemm_stop);
+	    cudaEventSynchronize(spgemm_stop);
+	    cudaEventElapsedTime(&spgemm_duration, spgemm_start, spgemm_stop);
+        elap_t += spgemm_duration;
+        if (i<9) cudaMemset(d_mat_c, 0.0, data.m*data.k*sizeof(float));
+    }
+    
     LOG(INFO) << "After the kernel ...";
 
     // transfer data to host
     LOG(INFO) << "Transfer results back ...";
 	cudaMemcpy(h_res_c, d_mat_c, data.m*data.k*sizeof(float), cudaMemcpyDeviceToHost);
+    float t = elap_t*(1e-3)/10;
+    std::cout<<"Flexspgemm time: "<<t<<" s "<<std::endl;
+    float gflops = (2*data.newVals.size()*data.k)/(1e+9);
+    std::cout<<"Flexspgemm Throughput: "<<gflops/t<<" gflops/s "<<std::endl;
+    float gb = (float)((data.nnzPtr.size()+block_tileStart_idx.size()
+            +warp_tileRow_idx.size()+data.tileColIdx.size()
+            +data.tileLeftColIdx.size()+data.newVals.size()+2*data.m*data.k)*4+data.rc_Offset.size())/(1e+9);
+    std::cout<<"Flexspgemm Bandwidth: "<<gb/t<<" GB/s "<<std::endl;
+    cudaDeviceSynchronize();	
+    
+    CHECK_CUDA(cudaFree(d_tileNnz));
+	CHECK_CUDA(cudaFree(d_block_tileStart_idx));
+	CHECK_CUDA(cudaFree(d_warp_tileRow_idx));
+	CHECK_CUDA(cudaFree(d_tileColIdx));
+	CHECK_CUDA(cudaFree(d_r_c_Offset));
+    CHECK_CUDA(cudaFree(d_vals));
+	CHECK_CUDA(cudaFree(d_mat_b));
+	CHECK_CUDA(cudaFree(d_mat_c));
+    
 }
 
 
@@ -170,4 +223,9 @@ void cuSpgemm(DataLoader& input){
                                  CUSPARSE_OPERATION_NON_TRANSPOSE,
                                  &alpha, matA, matB, &beta, matC, CUDA_R_32F,
                                  CUSPARSE_SPMM_CSR_ALG3, dBuffer))
+    CHECK_CUSPARSE( cusparseDestroySpMat(matA) )
+    CHECK_CUSPARSE( cusparseDestroyDnMat(matB) )
+    CHECK_CUSPARSE( cusparseDestroyDnMat(matC) )
+    CHECK_CUSPARSE( cusparseDestroy(handle) )
+    CHECK_CUDA( cudaFree(dBuffer) )
 }

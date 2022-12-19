@@ -55,7 +55,7 @@ void mat::print2(){
 	for (int i=0; i<tileRowPtr.size(); ++i)
 		std::cout<<tileRowPtr[i]<<" ";
 	std::cout<<std::endl;
-    /*
+    ///*
 	for (int i=0; i<nnzPtr.size(); ++i)
 		std::cout<<nnzPtr[i]<<" ";
 	std::cout<<std::endl;
@@ -75,7 +75,7 @@ void mat::print2(){
 	for (int i=0; i<newVals.size(); ++i)
 		std::cout<<newVals[i]<<" ";
 	std::cout<<std::endl;
-    */
+    //*/
 #endif
 	std::cout<<"Flex Tiles: "<<nnzPtr.size()-1<<std::endl;
 }
@@ -92,10 +92,10 @@ void mat::print2(){
 //  r = tileRowPtr[i] + rowOffset[k], c = colIdx[k]
 void mat::csr2tile(){
 	
-	int tileRows = (m+tm-1)/tm;
+	int tileRows = (m+TM-1)/TM;
 	//tileRowPtr.resize(tileRows+1);
 
-    std::cout<<"@98:"<<tileRows<<std::endl;
+    //std::cout<<"@98:"<<tileRows<<std::endl;
 	for (int i=0; i<tileRows; ++i){
 		csr2flex(i);
 		//csr2regular(i);
@@ -104,12 +104,12 @@ void mat::csr2tile(){
 // convert a row of tiles to regular tiles
 void mat::csr2regular(int ridx){
 	// row tile upper bound and lower bound
-	int rowStart = ridx * tm;
-	int rowEnd = min(m, (ridx+1)*tm); // exclusive
+	int rowStart = ridx * TM;
+	int rowEnd = min(m, (ridx+1)*TM); // exclusive
 
 	// keep track of the cols in each row
-	std::vector<unsigned int> cIdx(tm, -1); 
-	std::vector<unsigned int> cOffset(tm, 0);
+	std::vector<unsigned int> cIdx(TM, -1); 
+	std::vector<unsigned int> cOffset(TM, 0);
 	
 	unsigned int left = 0;
 	for (int i=rowStart; i<rowEnd; ++i){
@@ -117,7 +117,7 @@ void mat::csr2regular(int ridx){
 	}
 
 	// right bound (exclusive)
-	unsigned int right = min((int)left + tn, n);
+	unsigned int right = min((int)left + TN, n);
 	int nnzInRows = 0;
 	while (pos<rowPtr[rowEnd]){
 		int nnzInTile = 0;
@@ -130,7 +130,7 @@ void mat::csr2regular(int ridx){
 			
 			// c check is necessary because it constraines nze within the i-th row
 			while (c<rowPtr[i+1] && colIdx[c]>=left && colIdx[c]<right){
-				tileIndex = colIdx[c]/tn;
+				tileIndex = colIdx[c]/TN;
 				// currently, it is not 4-bit
 				rgl_rowOffset[pos] = i-rowStart;
 
@@ -149,20 +149,20 @@ void mat::csr2regular(int ridx){
 		if (nnzInTile) rgl_nnzPtr.push_back(rgl_nnzPtr.back()+nnzInTile);
 		if (tileIndex!=-1) rgl_tileColIdx.push_back(tileIndex);
 		// update left and right bound for next tile
-		left += tn;
-		right = min((int)left + tn, n);
+		left += TN;
+		right = min((int)left + TN, n);
 	}
 	rgl_tileRowPtr.push_back(rgl_tileRowPtr.back()+nnzInRows);
 }
 // convert a row of tiles to FlexSpTiles
 void mat::csr2flex(int ridx){
 	// row tile upper bound and lower bound
-	int rowStart = ridx * tm;
-	int rowEnd = min(m, (ridx+1)*tm); // exclusive
+	int rowStart = ridx * TM;
+	int rowEnd = min(m, (ridx+1)*TM); // exclusive
 
 	// keep track of the cols in each row
-	std::vector<unsigned int> cIdx(tm, -1); 
-	std::vector<unsigned int> cOffset(tm, 0);
+	std::vector<unsigned int> cIdx(TM, -1); 
+	std::vector<unsigned int> cOffset(TM, 0);
 	// get the left bound
 	// iterate over rows to get the smallest col idx
 	unsigned int left = n;
@@ -173,7 +173,7 @@ void mat::csr2flex(int ridx){
 	}
 
 	// right bound (exclusive)
-	unsigned int right = min((int)left + tn, n);
+	unsigned int right = min((int)left + TN, n);
 	int nnzInRows = 0;
     int tiles_in_cur_row = 0;
 	while (pos<rowPtr[rowEnd]){
@@ -217,7 +217,7 @@ void mat::csr2flex(int ridx){
 				left = min((int)left, (int)cIdx[i-rowStart]);
 			}
 		}
-		right = min((int)left + tn, n);
+		right = min((int)left + TN, n);
 	}
 	//tileRowPtr.push_back(tileRowPtr.back()+nnzInRows);
 	tileRowPtr.push_back(tileRowPtr.back()+tiles_in_cur_row);
