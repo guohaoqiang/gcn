@@ -1,5 +1,5 @@
 #include "../include/mat.h"
-
+/*
 mat::mat(std::vector<unsigned int>& r, 
 		std::vector<unsigned int>& c, 
 		std::vector<DataType>& v, 
@@ -55,7 +55,7 @@ void mat::print2(){
 	for (int i=0; i<tileRowPtr.size(); ++i)
 		std::cout<<tileRowPtr[i]<<" ";
 	std::cout<<std::endl;
-    ///*
+    //
 	for (int i=0; i<nnzPtr.size(); ++i)
 		std::cout<<nnzPtr[i]<<" ";
 	std::cout<<std::endl;
@@ -75,7 +75,7 @@ void mat::print2(){
 	for (int i=0; i<newVals.size(); ++i)
 		std::cout<<newVals[i]<<" ";
 	std::cout<<std::endl;
-    //*/
+    //
 #endif
 	std::cout<<"Flex Tiles: "<<nnzPtr.size()-1<<std::endl;
 }
@@ -222,3 +222,4 @@ void mat::csr2flex(int ridx){
 	//tileRowPtr.push_back(tileRowPtr.back()+nnzInRows);
 	tileRowPtr.push_back(tileRowPtr.back()+tiles_in_cur_row);
 }
+*/

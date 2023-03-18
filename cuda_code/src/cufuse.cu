@@ -1,5 +1,5 @@
 #include "../include/cufuse.cuh"
 
-void run(){
-    return ;
-}
+//void run(){
+//    return ;
+//}

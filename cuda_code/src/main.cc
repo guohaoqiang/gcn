@@ -6,23 +6,24 @@ DEFINE_bool(cmp, true, "Compare results");
 
 int main(int argc, char *argv[])
 {
-    int WarmupIterations  = 3;
-    int ExecutionIterations = 5;
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     VLOG(2)<<"Loading bench config....";
     DataLoader data(FLAGS_input, FLAGS_dim);
     std::cout<<"Graph name: "<<data.graph_name<<std::endl;
     std::cout<<"A: "<<data.cpuA->r<<"*"<<data.cpuA->c<<"  X: "<<data.n<<"*"<<data.dim<<"   W: "<<data.dim<<"*"<<data.c<<std::endl;
     std::cout<<"NNZ of A: "<<data.cpuA->nnz<<std::endl;
-    Metrics baselinemetrics1, baselinemetrics2, benchmetrics;
 #ifdef AXW
+    // AXW test is out of use currently when perform spgemm
+    int WarmupIterations  = 3;
+    int ExecutionIterations = 5;
+    Metrics baselinemetrics1, baselinemetrics2, benchmetrics;
     if (FLAGS_cmp){
-        for (size_t i=0; i<WarmupIterations; ++i){
+        for (int i=0; i<WarmupIterations; ++i){
             Metrics metric0 = Metrics();
             run1(data,metric0);
             run2(data,metric0);
         } 
-        for (size_t i=0; i<ExecutionIterations; ++i){
+        for (int i=0; i<ExecutionIterations; ++i){
             // step1: B = XW
             // step2: C = AB
             Metrics metric1 = Metrics();
@@ -67,7 +68,7 @@ int main(int argc, char *argv[])
     std::cout<<" spgemm:"<< baselinemetrics2.spgemm_t*(1e-3)/ExecutionIterations << " s   "<< baselinemetrics2.spgemm_flops/(baselinemetrics2.spgemm_t*(1e-3)/ExecutionIterations)/(1e+9) << " Gflops/s"<<std::endl; 
     //std::cout<<"AXW: "<< benchmetrics.flops/benchmetrics.t << "Gflops/s"<<std::endl;
 #endif
-    convert(data);
+    run(data); // flex.cuh,flex.cu
     return 0;
 
 }

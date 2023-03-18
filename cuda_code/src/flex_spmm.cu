@@ -106,7 +106,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 	#define ACC_SH  true
 	#if ACC_SH
 	//__shared__ char smem[(8*16*16 + 512)*WARPS+TM*32*4+4];
-	__shared__ char smem[(8*16*16 + 1024)*WARPS+TM*32*4+4];
+	__shared__ char smem[(8*16*16 + 1024)*WARPS+32*32*4+4];
 	#else
 	__shared__ char smem[(8*16*16 + 512)*WARPS+4];
 	#endif
@@ -119,8 +119,9 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 
 	#if ACC_SH
     //uint32_t* mark_c_rows = reinterpret_cast<uint32_t *>(smem+(8*16*16 + 512)*WARPS+TM*32*4);
-    uint32_t* mark_c_rows = reinterpret_cast<uint32_t *>(smem+(8*16*16 + 1024)*WARPS+TM*32*4);
-    for (uint32_t i=warp_id; i<TM; i+=warps){
+    uint32_t* mark_c_rows = reinterpret_cast<uint32_t *>(smem+(8*16*16 + 1024)*WARPS+32*32*4);
+    //for (uint32_t i=warp_id; i<TM; i+=warps){
+    for (uint32_t i=warp_id; i<32; i+=warps){
         c_mat_sh[i*32+lane_id] = 0;
     }
 	#else
@@ -443,7 +444,7 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		// ************************************************************************************
 
 	    float a_reg[2] = {0.0,0.0};
-		if (nnz_cur_tile <= 1*TM*TN){
+		if (nnz_cur_tile <= 1*1024){
             // Cuda cores
 			
 			// visit all nze in the current tile
@@ -521,7 +522,8 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 		if (lane_offset<min(blockIdx.y*32+32, k)){
             //if (blockIdx.x==9 && warp_id==0 && lane_id==0)
             //    printf("TM = %d, row_flag[1] = %d\n",TM,row_flag[1]);
-			for (uint32_t j=0; j<TM; ++j){
+			//for (uint32_t j=0; j<TM; ++j){
+			for (uint32_t j=0; j<32; ++j){
                 if (row_flag[1] & (1<<j)){
 			//for (uint32_t j=0; j<TM && (row_flag[1] & (1<<j))!=0; ++j){
 				    atomicAdd(&c_mat_sh[j*k+lane_id], res[j]);
@@ -558,7 +560,8 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
                       //  printf("@538: TM = %d, row_flag[1] = %d\n",TM,row_flag[1]);
 				// each warp transfer one row segment of C
 				//for (uint32_t i=warp_id; i<16 && (row_flag[1] & (1<<i)); i+=WARPS){
-				for (uint32_t i=warp_id; i<TM; i+=WARPS){
+				//for (uint32_t i=warp_id; i<TM; i+=WARPS){
+				for (uint32_t i=warp_id; i<32; i+=WARPS){
                     if (row_flag[1] & (1<<i)){
 					    uint32_t r = warp_tileRow_idx[blockIdx.x] + i;
 					    atomicAdd(&mat_c[r*k+lane_offset], c_mat_sh[i*32+lane_id]);
@@ -587,7 +590,8 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
                         //if (blockIdx.x==9 && warp_id==0 && lane_id==0){
                         //     printf("@592: row_flag[1] = %d\n", row_flag[1]);
                         //}
-				for (uint32_t i=warp_id; i<TM && (row_flag[1] & (1<<i)); i+=WARPS){
+				//for (uint32_t i=warp_id; i<TM && (row_flag[1] & (1<<i)); i+=WARPS){
+				for (uint32_t i=warp_id; i<32 && (row_flag[1] & (1<<i)); i+=WARPS){
 					uint32_t r = warp_tileRow_idx[blockIdx.x] + i;
 					mat_c[r*k+lane_offset] = c_mat_sh[i*32+lane_id];
 					//atomicAdd(&mat_c[r*k+lane_offset], c_mat_sh[i*32+lane_id]);

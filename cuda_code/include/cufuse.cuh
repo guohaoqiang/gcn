@@ -3,7 +3,7 @@
 
 //namespace cuFUSE{
 
-void run();
+//void run();
 
 
 //}

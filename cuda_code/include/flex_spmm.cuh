@@ -5,7 +5,8 @@
 #include <cstdint>
 #include <stdio.h>
 #include "common.h"
-__global__
+
+__global__ 
 void flexspgemm_cuda_reg_pre(int* tileNnz,
 				int* block_tileStart_idx,
 				int* warp_tileRow_idx,
@@ -16,5 +17,4 @@ void flexspgemm_cuda_reg_pre(int* tileNnz,
 				int k,
 				float* mat_b,
                 float* mat_c);
-
 #endif

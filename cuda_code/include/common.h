@@ -1,12 +1,13 @@
 #ifndef COMMON_H
 #define COMMON_H 
-#define TM 4
-#define TN 4
+//#define TM 4
+//#define TN 4
 #include <cuda_runtime.h> // cudaMalloc, cudaMemcpy, etc.
 #include <cublas_v2.h>       // cuSgemm
 #include <cusparse.h>         // cusparseSpMM
 #include <stdio.h>            // printf
 #include <stdlib.h>           // EXIT_FAILURE
+#include <vector>
 struct Metrics {
     float t = 0.0f;
     float spgemm_t = 0.0f;
@@ -29,6 +30,18 @@ struct Metrics {
         t /= x;
         flops /= x;
     }
+};
+
+class Perfs {
+public:
+    Perfs():cuspgemm_time(0.0),cuspgemm_throughput(0.0),cuspgemm_bandwidth(0.0){}
+    float cuspgemm_time;
+    float cuspgemm_throughput;
+    float cuspgemm_bandwidth;
+
+    std::vector<float> flex_spgemm_time;
+    std::vector<float> flex_spgemm_throughput;
+    std::vector<float> flex_spgemm_bandwidth;
 };
 
 #define CUDA_CHECK(err)                                                                            \
