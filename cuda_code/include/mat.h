@@ -108,14 +108,16 @@ void mat<TM,TN>::print1(){
 template<int TM, int TN>
 void mat<TM,TN>::print2(){
 #ifdef DEBUG
-	for (int i=0; i<tileRowPtr.size(); ++i)
+	/*
+    for (int i=0; i<tileRowPtr.size(); ++i)
 		std::cout<<tileRowPtr[i]<<" ";
 	std::cout<<std::endl;
-    ///*
+    
 	for (int i=0; i<nnzPtr.size(); ++i)
 		std::cout<<nnzPtr[i]<<" ";
 	std::cout<<std::endl;
-	for (int i=0; i<tileLeftColIdx.size(); ++i)
+	
+    for (int i=0; i<tileLeftColIdx.size(); ++i)
 		std::cout<<tileLeftColIdx[i]<<" ";
 	std::cout<<std::endl;
     std::cout<<"------- tile elements: -------"<<std::endl;
@@ -131,7 +133,7 @@ void mat<TM,TN>::print2(){
 	for (int i=0; i<newVals.size(); ++i)
 		std::cout<<newVals[i]<<" ";
 	std::cout<<std::endl;
-    //*/
+    */
 #endif
 	std::cout<<"Flex Tiles: "<<nnzPtr.size()-1<<std::endl;
 }

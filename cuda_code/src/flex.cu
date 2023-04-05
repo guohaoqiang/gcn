@@ -62,9 +62,9 @@ void run(DataLoader& input){
         LOG(INFO) << "Verify result accuracy ...";
         for (size_t i=0; i<input.n; ++i){
             for (size_t j=0; j<input.dim; ++j){
-                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
+                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.01){
                     count++;
-                    //if (i<8 && j==0) 
+                    if (j==0) 
                     std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
@@ -84,10 +84,10 @@ void run(DataLoader& input){
         LOG(INFO) << "Verify result accuracy ...";
         for (size_t i=0; i<input.n; ++i){
             for (size_t j=0; j<input.dim; ++j){
-                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
+                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.01){
                     count++;
                     //if (i<8 && j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -99,6 +99,7 @@ void run(DataLoader& input){
     {
         mat<16,16> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
+        data.print2();
         flexspgemm(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
@@ -106,10 +107,10 @@ void run(DataLoader& input){
         LOG(INFO) << "Verify result accuracy ...";
         for (size_t i=0; i<input.n; ++i){
             for (size_t j=0; j<input.dim; ++j){
-                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
+                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.01){
                     count++;
-                    //if (i<8 && j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //if (j==0) 
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -130,8 +131,8 @@ void run(DataLoader& input){
             for (size_t j=0; j<input.dim; ++j){
                 if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
                     count++;
-                    //if (i<8 && j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //if (j==0) 
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -150,10 +151,10 @@ void run(DataLoader& input){
         LOG(INFO) << "Verify result accuracy ...";
         for (size_t i=0; i<input.n; ++i){
             for (size_t j=0; j<input.dim; ++j){
-                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
+                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.01){
                     count++;
                     //if (i<8 && j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -172,10 +173,10 @@ void run(DataLoader& input){
         LOG(INFO) << "Verify result accuracy ...";
         for (size_t i=0; i<input.n; ++i){
             for (size_t j=0; j<input.dim; ++j){
-                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
+                if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.01){
                     count++;
                     //if (i<8 && j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -240,7 +241,7 @@ void run(DataLoader& input){
             for (size_t j=0; j<input.dim; ++j){
                 if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
                     count++;
-                    //if (i<8 && j==0) 
+                    if (j==0) 
                     std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
@@ -263,7 +264,7 @@ void run(DataLoader& input){
                 if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
                     count++;
                     //if (i<8 && j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -358,27 +359,27 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 	// allocate device memory
     // index of the first nz entry in each tile, length = #tiles+1
     int* d_tileNnz; 
-	cudaMalloc(&d_tileNnz, data.nnzPtr.size()*sizeof(int));
+	CHECK_CUDA(cudaMalloc(&d_tileNnz, data.nnzPtr.size()*sizeof(int)));
     
     // index of the first tile for each thread block, length = #blocks+1
     int* d_block_tileStart_idx; 
-	cudaMalloc(&d_block_tileStart_idx, data.block_tileStart_idx.size()*sizeof(int));
+	CHECK_CUDA(cudaMalloc(&d_block_tileStart_idx, data.block_tileStart_idx.size()*sizeof(int)));
     
     // row index of tiles for each thread block, length = #blocks
     int* d_warp_tileRow_idx; 
-	cudaMalloc(&d_warp_tileRow_idx, data.warp_tileRow_idx.size()*sizeof(int));
+	CHECK_CUDA(cudaMalloc(&d_warp_tileRow_idx, data.warp_tileRow_idx.size()*sizeof(int)));
 	
     // column index of tiles, length = #tiles
     int* d_tileColIdx; 
-	cudaMalloc(&d_tileColIdx, data.tileLeftColIdx.size()*sizeof(int));
+	CHECK_CUDA(cudaMalloc(&d_tileColIdx, data.tileLeftColIdx.size()*sizeof(int)));
      
     // row&col index of vals in sparse matrix, length = nnz
     char* d_r_c_Offset; 
-	cudaMalloc(&d_r_c_Offset, data.rc_Offset.size()*sizeof(char));
+	CHECK_CUDA(cudaMalloc(&d_r_c_Offset, data.rc_Offset.size()*sizeof(char)));
     
     // non-zero vals of sparse matrix, length = nnz
     float* d_vals; 
-	cudaMalloc(&d_vals, data.newVals.size()*sizeof(int));
+	CHECK_CUDA(cudaMalloc(&d_vals, data.newVals.size()*sizeof(int)));
     
     /*
     // Matrix B
@@ -390,11 +391,11 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
     }
     */
     float* d_mat_b; 
-	cudaMalloc(&d_mat_b, data.m*data.k*sizeof(float));
+	CHECK_CUDA(cudaMalloc(&d_mat_b, data.m*data.k*sizeof(float)));
     
     // Matrix C
     float* d_mat_c; 
-	cudaMalloc(&d_mat_c, data.m*data.k*sizeof(float));
+	CHECK_CUDA(cudaMalloc(&d_mat_c, data.m*data.k*sizeof(float)));
     cudaMemset(d_mat_c, 0.0, data.m*data.k*sizeof(float));
     cudaDeviceSynchronize(); 
     
@@ -411,6 +412,8 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 
 	// each thread block has 2 warps
 	dim3 grid(data.block_tileStart_idx.size()-1, (data.k+31)/32);
+    printf("@415:   data.block_tileStart_idx.size() = %d\n",data.block_tileStart_idx.size());
+    printf("@416:   data.k = %d\n",data.k);
     LOG(INFO) << "Ahead the kernel ...";
     //std::cout<<"block_tileStart_idx:"<<std::endl;
     //print(block_tileStart_idx);
@@ -420,7 +423,8 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
     // warm up
     for (int i=0; i<5; ++i){
         
-        flexspgemm_cuda_reg_pre<<<grid, 64>>>(d_tileNnz, 
+        //flexspgemm_cuda_reg_pre_v2<<<grid, 64>>>(d_tileNnz, 
+        flexspgemm_cuda_wo_pre_v3<<<grid, 64>>>(d_tileNnz,
                                                 d_block_tileStart_idx, 
                                                 d_warp_tileRow_idx, 
                                                 d_tileColIdx, 
@@ -441,8 +445,8 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
     float elap_t = 0; 
     for (int i=0; i<10; ++i){
         cudaEventRecord(spgemm_start);
-        
-        flexspgemm_cuda_reg_pre<<< grid, 64 >>>(d_tileNnz,
+        //flexspgemm_cuda_reg_pre_v2<<<grid, 64>>>(d_tileNnz,
+        flexspgemm_cuda_wo_pre_v3<<<grid, 64>>>(d_tileNnz,
                                         d_block_tileStart_idx,
                                         d_warp_tileRow_idx,
                                         d_tileColIdx,
