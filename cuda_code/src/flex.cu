@@ -64,8 +64,8 @@ void run(DataLoader& input){
             for (size_t j=0; j<input.dim; ++j){
                 if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.01){
                     count++;
-                    if (j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //if (j==0) 
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }

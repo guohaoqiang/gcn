@@ -32,6 +32,7 @@ public:
 	std::vector<unsigned int> nnzPtr;
 	std::vector<unsigned int> tileLeftColIdx;
     std::vector<char> rc_Offset;
+    std::vector<short> rc16_Offset;
 	std::vector<DataType> newVals;
     
     std::vector<unsigned int> rowOffset;
@@ -65,6 +66,7 @@ mat<TM,TN>::mat(std::vector<unsigned int>& r,
 			nnzPtr.push_back(0);
             
             rc_Offset.resize(nnz);
+            rc16_Offset.resize(nnz);
 			newVals.resize(nnz);
 
 			rowOffset.resize(nnz);
@@ -189,7 +191,14 @@ void mat<TM,TN>::csr2flex(int ridx){
 	unsigned int right = min((int)left + tn, n);
 	int nnzInRows = 0;
     int tiles_in_cur_row = 0;
-	while (pos<rowPtr[rowEnd]){
+
+    int tmp_tm = TM;
+    int tm_bits = 0;
+    int tn_bits = 16;
+    while (tmp_tm >>= 1)    tm_bits++;
+    tn_bits = 16 - tm_bits;
+	
+    while (pos<rowPtr[rowEnd]){
 		int nnzInTile = 0;
         tiles_in_cur_row++;
 		// collect tiles in the tile-row
@@ -201,16 +210,22 @@ void mat<TM,TN>::csr2flex(int ridx){
 			// c check is necessary because it constraines nze within the i-th row
 			while (c<rowPtr[i+1] && colIdx[c]>=left && colIdx[c]<right){
                 char rc = 0;
+                short rc16 = 0;
+
 				// currently, it is not 4-bit
 				rowOffset[pos] = i-rowStart;
                 rc |= (rowOffset[pos]<<4);
+                rc16 |= (rowOffset[pos]<<(16-tm_bits));
 
 				// real col idx
 				tileColIdx[pos] = cIdx[i-rowStart];
                 rc |= (tileColIdx[pos]-left);
-				// nze values
+                rc16 |= (tileColIdx[pos]-left);
+				
+                // nze values
 				newVals[pos] = vals[c];
                 rc_Offset[pos] = rc;
+                rc16_Offset[pos] = rc16;
 
 				cIdx[i-rowStart] = colIdx[++c];
 				pos++;
