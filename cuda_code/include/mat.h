@@ -32,7 +32,6 @@ public:
 	std::vector<unsigned int> nnzPtr;
 	std::vector<unsigned int> tileLeftColIdx;
     std::vector<char> rc_Offset;
-    std::vector<short> rc16_Offset;
 	std::vector<DataType> newVals;
     
     std::vector<unsigned int> rowOffset;
@@ -40,6 +39,10 @@ public:
 
 	vector<unsigned int> block_tileStart_idx;
 	vector<unsigned int> warp_tileRow_idx;
+
+    // v4  kernel
+    vector<int> metaTile;
+    vector<int> rcOffset;
 
 	// regular sparse-tile storage
 	std::vector<unsigned int> rgl_tileRowPtr;
@@ -64,9 +67,10 @@ mat<TM,TN>::mat(std::vector<unsigned int>& r,
 			tm = TM,tn = TN;
 			tileRowPtr.push_back(0);
 			nnzPtr.push_back(0);
+            metaTile.push_back(0);
             
             rc_Offset.resize(nnz);
-            rc16_Offset.resize(nnz);
+            rcOffset.resize(nnz);
 			newVals.resize(nnz);
 
 			rowOffset.resize(nnz);
@@ -144,8 +148,7 @@ template<int TM, int TN>
 void mat<TM,TN>::csr2tile(){
 	
 	int tileRows = (m+tm-1)/tm;
-	
-	
+		
     //tileRowPtr.resize(tileRows+1);
 
     //std::cout<<"@98:"<<tileRows<<std::endl;
@@ -192,16 +195,12 @@ void mat<TM,TN>::csr2flex(int ridx){
 	int nnzInRows = 0;
     int tiles_in_cur_row = 0;
 
-    int tmp_tm = TM;
-    int tm_bits = 0;
-    int tn_bits = 16;
-    while (tmp_tm >>= 1)    tm_bits++;
-    tn_bits = 16 - tm_bits;
-	
+    int tileStart = rowPtr[i];
     while (pos<rowPtr[rowEnd]){
 		int nnzInTile = 0;
         tiles_in_cur_row++;
 		// collect tiles in the tile-row
+        int bit_map = 0;
 		for (int i=rowStart; i<rowEnd; ++i){
 			// absolute position of the nze in csr, idx = base + offset
 			int c = rowPtr[i] + cOffset[i-rowStart];
@@ -210,22 +209,22 @@ void mat<TM,TN>::csr2flex(int ridx){
 			// c check is necessary because it constraines nze within the i-th row
 			while (c<rowPtr[i+1] && colIdx[c]>=left && colIdx[c]<right){
                 char rc = 0;
-                short rc16 = 0;
+                int rc16 = 0;
 
 				// currently, it is not 4-bit
 				rowOffset[pos] = i-rowStart;
                 rc |= (rowOffset[pos]<<4);
-                rc16 |= (rowOffset[pos]<<(16-tm_bits));
+                rc16 |= (rowOffset[pos]<<16);
 
 				// real col idx
 				tileColIdx[pos] = cIdx[i-rowStart];
                 rc |= (tileColIdx[pos]-left);
                 rc16 |= (tileColIdx[pos]-left);
-				
+			    bit_map |= (1<<(tileColIdx[pos]-left));	
                 // nze values
 				newVals[pos] = vals[c];
                 rc_Offset[pos] = rc;
-                rc16_Offset[pos] = rc16;
+                rcOffset[pos] = rc16;
 
 				cIdx[i-rowStart] = colIdx[++c];
 				pos++;
@@ -236,7 +235,19 @@ void mat<TM,TN>::csr2flex(int ridx){
 		}
 		nnzPtr.push_back(nnzPtr.back()+nnzInTile);
         tileLeftColIdx.push_back(left);
-		// update left and right bound for next tile
+        
+        // ---------- v4 -------
+        metaTile.push_back(tileStart); // meta.x: nnzPtr  
+        tileStart = nnzPtr.back()+nnzInTile; // meta.y: #nnz in the current tile (nnzPtr+#nnz == the start of next tile)
+        metaTile.push_back(nnzInTile); // meta.z: bit_map to mark B rows required by the current tile
+        if (pos>=rowPtr[rowEnd]){
+            bit_map |= (1<<31);
+        }
+        metaTile.push_back(bit_map); // meta.w: column idx of the current tile. MSB bit "1" indicates its the last tile in current row-tiles
+        metaTile.push_back(left);
+        // ---------------------
+		
+        // update left and right bound for next tile
 		left = n;
 		for (int i=rowStart; i<rowEnd; ++i){
 			// check whether the column goes to the next row
@@ -246,6 +257,7 @@ void mat<TM,TN>::csr2flex(int ridx){
 			}
 		}
 		right = min((int)left + tn, n);
+
 	}
 	//tileRowPtr.push_back(tileRowPtr.back()+nnzInRows);
 	tileRowPtr.push_back(tileRowPtr.back()+tiles_in_cur_row);

@@ -1251,3 +1251,106 @@ void flexspgemm_cuda_wo_pre_v3(int* tileNnz,
     
 	return ;
 }
+
+
+
+// args:
+//		metaTile: meta data for each tile.
+//				meta.x: nnzPtr
+// 				meta.y: #nnz in the current tile (nnzPtr+#nnz == the start of next tile)
+// 				meta.z: bit_map to mark B rows required by the current tile
+// 				meta.w: column idx of the current tile. MSB bit "1" indicates its the last tile in current row-tiles
+//      rcOffset: row and column indexfor each non-zero entry
+//		vals: non-zero entries
+// 		spH: height of sparseMat
+// 		mat_b: input dense mat
+//		k: width of mat_b
+//		mat_c: output dense mat
+// A: sparse, m * n
+// B: dense, n * k   (k << n)
+#define FULL_MASK 0xffffffff
+template<int tm, int tn, int warps>
+__global__
+void flexspgemm_cuda_wo_pre_v4(int* metaTile,
+				int* rcOffset,
+				float* vals,
+				int spH,
+				float* mat_b,
+				int k,
+                float* mat_c){
+	const uint32_t WARPSZ = 32;
+	const uint32_t lane_id = threadIdx.x % WARPSZ;
+    const uint32_t warp_id = threadIdx.x / WARPSZ;
+	//const uint32_t warps = (blockDim.x + WARPSZ - 1)/WARPSZ;
+
+	// now we restrain "tn" in {4,8,16,32}
+	__shared__ float curB[warps][tn*32]; // 2 warps && each warp needs tn*8*4 matB float entries
+	float res[tm];
+	#pragma unroll
+	for (int i=0; i<tm; ++i){
+		res[i] = 0;
+	}
+
+	int computeWidth = 1; // # of C entries to be computed by a thread
+	int tileRows_perBlk = 1; // # row tiles per block
+	for (int row_idx=blockIdx.x*tileRows_perBlk ; row_idx<(spH+tm-1)/tm; row_idx += (gridDim.x*tileRows_perBlk)){ // over C rows
+		if (row_idx<spH){
+			for (int col_idx=warp_id*(32*computeWidth); col_idx<k; col_idx += warps*(32*computeWidth)){  // over C tile columns
+
+				int i = row_idx;
+				// meta.x: nnzPtr
+				// meta.y: #nnz in the current tile (nnzPtr+#nnz == the start of next tile)
+				// meta.z: bit_map to mark B rows required by the current tile
+				// meta.w: column idx of the current tile. MSB bit "1" indicates its the last tile in current row-tiles
+				int4 meta = reinterpret_cast<int4*>(metaTile)[i];
+
+
+				bool flag = true;
+				while (flag){	// iterate over all sparse tiles in the "row_idx" tile-row
+
+					// load requiring B rows to smem
+					for (int j=0; j<tn; ++j){
+						if (meta.z & (1>>j)){
+							curB[warp_id][j*32+lane_id] = mat_b[(meta.w+j)*k + col_idx + lane_id];
+						}
+					}
+					__syncwarp(); // I doubt if it is necessary besause warp is the minimum sheduling unit
+
+					int steps = 1;
+					// a sparse tile
+					for (int kk=meta.x; kk<meta.x+meta.y; kk+=steps){
+						uint32_t mask_join = __ballot_sync(FULL_MASK, kk+lane_id<meta.x+meta.y);
+                		steps = __popc(mask_join);
+
+                		// load sparse nnz from glb mem
+                		float val = vals[kk+lane_id];
+                		int rcidx = rcOffset[kk+lane_id];
+
+                		// exchange nnz within a warp && perfom FMA
+                		for (int it=0; it<steps; ++it){
+                			float v = __shfl_sync(FULL_MASK, val, it);
+                			int rc = __shfl_sync(FULL_MASK, rcidx, it);
+
+                			res[rc>>16] += v * curB[warp_id][(rc & 0x0000ffff)*32 + lane_id];
+                		}
+					}
+
+					// if MSB of meta.w is 1, we know the current tile is the last in current tile-row
+					if (meta.w & (1<<32)){
+						flag = false;
+					}else{
+						meta = reinterpret_cast<int4*>(metaTile)[++i];
+					}
+				}
+
+				// store C tiles back to global mem
+				#pragma unroll
+				for (int c=0; c<tm, ++c){
+					mat_c[(row_idx*tm+c)*k+col_idx+lane_id] = res[c];
+					res[c] = 0;
+				}
+
+			} // end C column loops
+		} // end if
+	} // end C row loops
+}
