@@ -6,11 +6,11 @@
 #include "mat.h"
 #include "flex_spmm.cuh"
 #define CUBE4X4
-#define CUBE8X8
-#define CUBE16X16
+//#define CUBE8X8
+//#define CUBE16X16
 //#define CUBE32X32
-#define RECT8X16
-#define RECT16X8
+//#define RECT8X16
+//#define RECT16X8
 //#define RECT8X32
 //#define RECT32X8
 //#define RECT16X32

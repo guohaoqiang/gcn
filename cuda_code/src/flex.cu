@@ -55,6 +55,7 @@ void run(DataLoader& input){
     {
         mat<4,4> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
+	    //data.print2();
         flexspgemm(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
@@ -99,7 +100,7 @@ void run(DataLoader& input){
     {
         mat<16,16> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        data.print2();
+        //data.print2();
         flexspgemm(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
@@ -198,7 +199,7 @@ void run(DataLoader& input){
                 if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
                     count++;
                     //if (i<8 && j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -220,7 +221,7 @@ void run(DataLoader& input){
                 if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
                     count++;
                     //if (i<8 && j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -241,8 +242,8 @@ void run(DataLoader& input){
             for (size_t j=0; j<input.dim; ++j){
                 if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.001){
                     count++;
-                    if (j==0) 
-                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    //if (j==0) 
+                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
@@ -356,6 +357,7 @@ void run(DataLoader& input){
 
 template<typename MT>
 void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
+
 	// allocate device memory
     // index of the first nz entry in each tile, length = #tiles+1
     int* d_tileNnz; 
@@ -380,7 +382,20 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
     // non-zero vals of sparse matrix, length = nnz
     float* d_vals; 
 	CHECK_CUDA(cudaMalloc(&d_vals, data.newVals.size()*sizeof(int)));
-    
+   
+
+    // v4 kernel
+    int* d_metaTile; 
+	CHECK_CUDA(cudaMalloc(&d_metaTile, data.metaTile.size()*sizeof(int)));
+    //std::cout<<"@536: metaTile.size() = "<<data.metaTile.size()<<std::endl;
+    int* d_rcOffset; 
+	CHECK_CUDA(cudaMalloc(&d_rcOffset, data.rcOffset.size()*sizeof(int)));
+    //std::cout<<"@539: rcOffset.size() = "<<data.rcOffset.size()<<std::endl;
+    int* d_tileRowPtr; 
+	CHECK_CUDA(cudaMalloc(&d_tileRowPtr, data.tileRowPtr.size()*sizeof(int)));
+
+	//data.print2();
+
     /*
     // Matrix B
     float* mat_b = (float*)malloc(data.m*data.k*sizeof(float));
@@ -410,10 +425,16 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 	cudaMemcpy(d_mat_b, mat_b, data.m*data.k*sizeof(float), cudaMemcpyHostToDevice);
 	//cudaMemcpy(d_mat_c, mat_c, data.m*data.k*sizeof(float), cudaMemcpyHostToDevice);
 
+    // v4 kernel
+	cudaMemcpy(d_metaTile, data.metaTile.data(), data.metaTile.size()*sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_rcOffset, data.rcOffset.data(), data.rcOffset.size()*sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_tileRowPtr, data.tileRowPtr.data(), data.tileRowPtr.size()*sizeof(int), cudaMemcpyHostToDevice);
+    
+
 	// each thread block has 2 warps
-	dim3 grid(data.block_tileStart_idx.size()-1, (data.k+31)/32);
-    printf("@415:   data.block_tileStart_idx.size() = %d\n",data.block_tileStart_idx.size());
-    printf("@416:   data.k = %d\n",data.k);
+	//dim3 grid(data.block_tileStart_idx.size()-1, (data.k+31)/32);
+    //printf("@415:   data.block_tileStart_idx.size() = %d\n",data.block_tileStart_idx.size());
+    //printf("@416:   data.k = %d\n",data.k);
     LOG(INFO) << "Ahead the kernel ...";
     //std::cout<<"block_tileStart_idx:"<<std::endl;
     //print(block_tileStart_idx);
@@ -422,7 +443,7 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 	
     // warm up
     for (int i=0; i<5; ++i){
-        
+     /*
         //flexspgemm_cuda_reg_pre_v2<<<grid, 64>>>(d_tileNnz, 
         flexspgemm_cuda_wo_pre_v3<<<grid, 64>>>(d_tileNnz,
                                                 d_block_tileStart_idx, 
@@ -434,7 +455,10 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
                                                 data.k, 
                                                 d_mat_b, 
                                                 d_mat_c);
-        
+       */ 
+        //flexspgemm_cuda_wo_pre_v4<4,4,2><<<grid,64>>>(d_metaTile, d_rcOffset, 
+        //                                              d_vals, data.m,
+        //                                              d_mat_b, data.k, d_mat_c);
         cudaMemset(d_mat_c, 0.0, data.m*data.k*sizeof(float));
     }
     // run test
@@ -443,8 +467,11 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 	cudaEventCreate(&spgemm_start);
 	cudaEventCreate(&spgemm_stop);
     float elap_t = 0; 
-    for (int i=0; i<10; ++i){
+    int gridx = (data.m+3)/4;
+    for (int i=0; i<5; ++i){
+        std::cout<<"@650 -----------------------   i = "<<i<<" gridx = "<<gridx<<std::endl;
         cudaEventRecord(spgemm_start);
+        /*
         //flexspgemm_cuda_reg_pre_v2<<<grid, 64>>>(d_tileNnz,
         flexspgemm_cuda_wo_pre_v3<<<grid, 64>>>(d_tileNnz,
                                         d_block_tileStart_idx,
@@ -456,12 +483,21 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
                                         data.k,
                                         d_mat_b,
                                         d_mat_c);
-	    
+	    */
+        flexspgemm_cuda_wo_pre_v4<4,4,2><<<(gridx+3)/4,64>>>(d_tileRowPtr, 
+                                                              data.tileRowPtr.back(),
+                                                              d_metaTile, 
+                                                              d_rcOffset, 
+                                                              d_vals, 
+                                                              data.m,
+                                                              d_mat_b, 
+                                                              data.k, 
+                                                              d_mat_c);
         cudaEventRecord(spgemm_stop);
 	    cudaEventSynchronize(spgemm_stop);
 	    cudaEventElapsedTime(&spgemm_duration, spgemm_start, spgemm_stop);
         elap_t += spgemm_duration;
-        if (i<9) cudaMemset(d_mat_c, 0.0, data.m*data.k*sizeof(float));
+        //if (i<9) cudaMemset(d_mat_c, 0.0, data.m*data.k*sizeof(float));
     }
     
     cudaDeviceSynchronize(); 
@@ -490,6 +526,10 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 	CHECK_CUDA(cudaFree(d_r_c_Offset));
     CHECK_CUDA(cudaFree(d_vals));
 	CHECK_CUDA(cudaFree(d_mat_b));
+    
+    // v4 kernel
+    CHECK_CUDA(cudaFree(d_metaTile));
+    CHECK_CUDA(cudaFree(d_rcOffset));
 }
 /*
 void flexspgemm(float* h_res_c, const mat& data, const float* mat_b, Perfs& perfRes){

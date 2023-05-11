@@ -1,5 +1,6 @@
 #ifndef FLEX_SPMM_H
 #define FLEX_SPMM_H
+#define FULL_MASK 0xffffffff
 
 #include <cuda_runtime.h>
 #include <cstdint>
@@ -39,4 +40,5 @@ void flexspgemm_cuda_wo_pre_v3(int* tileNnz,
 				int k,
 				float* mat_b,
                 float* mat_c);
+
 #endif

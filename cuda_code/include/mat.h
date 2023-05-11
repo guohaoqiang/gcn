@@ -67,10 +67,12 @@ mat<TM,TN>::mat(std::vector<unsigned int>& r,
 			tm = TM,tn = TN;
 			tileRowPtr.push_back(0);
 			nnzPtr.push_back(0);
-            metaTile.push_back(0);
+            // v4 kernel
+            //metaTile.push_back(0);
             
             rc_Offset.resize(nnz);
-            rcOffset.resize(nnz);
+            // v4 kernel
+            //rcOffset.resize(nnz);
 			newVals.resize(nnz);
 
 			rowOffset.resize(nnz);
@@ -141,6 +143,22 @@ void mat<TM,TN>::print2(){
 	std::cout<<std::endl;
     */
 #endif
+    std::cout<<std::endl<<"metaTile:"<<std::endl;
+    for (int i=0; i<metaTile.size(); ++i){
+		if (i%4==0) std::cout<<"|";
+        std::cout<<metaTile[i]<<" ";
+    }
+    std::cout<<std::endl<<"rc:"<<std::endl;
+	for (int i=0; i<rcOffset.size(); ++i){
+		int r = rcOffset[i]>>16;
+		int c = rcOffset[i] & 0x0000FFFF;
+        std::cout<<"{"<<r<<","<<c<<"}"<<" ";
+    }
+	
+//    std::cout<<std::endl<<"vals:"<<std::endl;
+//	for (int i=0; i<newVals.size(); ++i)
+//		std::cout<<newVals[i]<<" ";
+	std::cout<<std::endl;
 	std::cout<<"Flex Tiles: "<<nnzPtr.size()-1<<std::endl;
 }
 
@@ -195,7 +213,7 @@ void mat<TM,TN>::csr2flex(int ridx){
 	int nnzInRows = 0;
     int tiles_in_cur_row = 0;
 
-    int tileStart = rowPtr[i];
+    int tileStart = rowPtr[ridx];
     while (pos<rowPtr[rowEnd]){
 		int nnzInTile = 0;
         tiles_in_cur_row++;
@@ -220,11 +238,12 @@ void mat<TM,TN>::csr2flex(int ridx){
 				tileColIdx[pos] = cIdx[i-rowStart];
                 rc |= (tileColIdx[pos]-left);
                 rc16 |= (tileColIdx[pos]-left);
-			    bit_map |= (1<<(tileColIdx[pos]-left));	
+			    bit_map |= 1<<(tileColIdx[pos]-left);	
                 // nze values
 				newVals[pos] = vals[c];
                 rc_Offset[pos] = rc;
-                rcOffset[pos] = rc16;
+                //rcOffset[pos] = rc16;
+                rcOffset.push_back(rc16);
 
 				cIdx[i-rowStart] = colIdx[++c];
 				pos++;
@@ -233,20 +252,22 @@ void mat<TM,TN>::csr2flex(int ridx){
 				nnzInRows++;
 			}
 		}
-		nnzPtr.push_back(nnzPtr.back()+nnzInTile);
-        tileLeftColIdx.push_back(left);
         
         // ---------- v4 -------
         metaTile.push_back(tileStart); // meta.x: nnzPtr  
-        tileStart = nnzPtr.back()+nnzInTile; // meta.y: #nnz in the current tile (nnzPtr+#nnz == the start of next tile)
-        metaTile.push_back(nnzInTile); // meta.z: bit_map to mark B rows required by the current tile
+        tileStart = nnzPtr.back()+nnzInTile; 
+        // mark the last tile in current row-tile
         if (pos>=rowPtr[rowEnd]){
-            bit_map |= (1<<31);
+            //bit_map |= (1<<30);
+            nnzInTile |= (1<<31);
         }
-        metaTile.push_back(bit_map); // meta.w: column idx of the current tile. MSB bit "1" indicates its the last tile in current row-tiles
-        metaTile.push_back(left);
+        metaTile.push_back(nnzInTile); // meta.y: #nnz in the current tile (nnzPtr+#nnz == the start of next tile)
+        metaTile.push_back(bit_map); // meta.z: bit_map to mark B rows required by the current tile
+        metaTile.push_back(left); // meta.w: column idx of the current tile. MSB bit "1" indicates its the last tile in current row-tiles
         // ---------------------
 		
+		nnzPtr.push_back(nnzPtr.back()+nnzInTile);
+        tileLeftColIdx.push_back(left);
         // update left and right bound for next tile
 		left = n;
 		for (int i=rowStart; i<rowEnd; ++i){

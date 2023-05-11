@@ -1253,13 +1253,21 @@ void flexspgemm_cuda_wo_pre_v3(int* tileNnz,
 }
 
 
-
+__device__ __forceinline__
+void ldg64(int &reg0, int &reg1,
+            const uint32_t &addr) {
+    asm volatile (
+        "ld.global.v2.u32 {%0, %1}, [%2];\n"
+        : "=r"(reg0), "=r"(reg1)
+        : "r"(addr)
+    );
+}
 // args:
-//		metaTile: meta data for each tile.
-//				meta.x: nnzPtr
-// 				meta.y: #nnz in the current tile (nnzPtr+#nnz == the start of next tile)
-// 				meta.z: bit_map to mark B rows required by the current tile
-// 				meta.w: column idx of the current tile. MSB bit "1" indicates its the last tile in current row-tiles
+//		tileRowPtr: tile ptr for the 1st tile in each row
+//		nnzPtr: ptr for the 1st non zero entry of each tile
+// 		nnz: #nnz of each tile
+// 		bitMap: mark B rows required by the each tile
+// 		tileLeftCol: column idx of each tile. // tba: MSB bit "1" indicates its the last tile in current row-tiles
 //      rcOffset: row and column indexfor each non-zero entry
 //		vals: non-zero entries
 // 		spH: height of sparseMat
@@ -1268,10 +1276,13 @@ void flexspgemm_cuda_wo_pre_v3(int* tileNnz,
 //		mat_c: output dense mat
 // A: sparse, m * n
 // B: dense, n * k   (k << n)
-#define FULL_MASK 0xffffffff
 template<int tm, int tn, int warps>
 __global__
-void flexspgemm_cuda_wo_pre_v4(int* metaTile,
+void flexspgemm_cuda_wo_pre_v4_4X4(int* tileRowPtr,
+                int* nnzPtr,
+                int* nnz,
+                int* bitMap,
+                int* tileLeftCol,
 				int* rcOffset,
 				float* vals,
 				int spH,
@@ -1293,39 +1304,57 @@ void flexspgemm_cuda_wo_pre_v4(int* metaTile,
 
 	int computeWidth = 1; // # of C entries to be computed by a thread
 	int tileRows_perBlk = 1; // # row tiles per block
-	for (int row_idx=blockIdx.x*tileRows_perBlk ; row_idx<(spH+tm-1)/tm; row_idx += (gridDim.x*tileRows_perBlk)){ // over C rows
-		if (row_idx<spH){
-			for (int col_idx=warp_id*(32*computeWidth); col_idx<k; col_idx += warps*(32*computeWidth)){  // over C tile columns
+	for (int row_idx=blockIdx.x*tileRows_perBlk; row_idx<(spH+tm-1)/tm; row_idx += (gridDim.x*tileRows_perBlk)){ // over C rows
+		
+        uint32_t tile_global_addr = smem_u32addr(tileRowPtr);
+        int tile_curR_id = 0, tile_nxtR_id = 0;
+        ldg64(tile_curR_id, tile_nxtR_id, tile_global_addr + row_idx*sizeof(int));
+        
+        for (int col_idx=warp_id*(32*computeWidth); col_idx<k; col_idx += warps*(32*computeWidth)){  // over C tile columns
 
-				int i = row_idx;
-				// meta.x: nnzPtr
-				// meta.y: #nnz in the current tile (nnzPtr+#nnz == the start of next tile)
-				// meta.z: bit_map to mark B rows required by the current tile
-				// meta.w: column idx of the current tile. MSB bit "1" indicates its the last tile in current row-tiles
-				int4 meta = reinterpret_cast<int4*>(metaTile)[i];
+		    int tiles = 0;
+			uint32_t mask_tiles = __ballot_sync(FULL_MASK, tile_curR_id+lane_id<tile_nxtR_id);
+            tiles = __popc(mask_tiles); // maximum # tiles can be loaded in cur row 
+            for (int tile_id=tile_curR_id; tile_id<tile_nxtR_id; tile_id+=tiles){
 
+                int start_of_tile = 0, nnz_of_tile = 0, bitmap_of_tile = 0, col_of_tile = 0;
+                if (tile_curR_id+lane_id<tile_nxtR_id){
+                    // load as many as as tile info of cur tile-row
+                    start_of_tile = nnzPtr[tile_start_id+lane_id];
+                    nnz_of_tile = nnz[tile_start_id+lane_id];
+                    bitmap_of_tile = bitMap[tile_start_id+lane_id];
+                    col_of_tile = tileLeftCol[tile_start_id+lane_id];
+                }
 
-				bool flag = true;
-				while (flag){	// iterate over all sparse tiles in the "row_idx" tile-row
-
+                // use all loaded tiles
+                for(int tile_cnt = 0; tile_cnt<tiles; ++tile_cnt){
+                    int start_cur_tile = __shfl_sync(FULL_MASK, start_of_tile, tile_cnt);
+                    int nnz_cur_tile = __shfl_sync(FULL_MASK, nnz_of_tile, tile_cnt);
+                    int bitmap_cur_tile = __shfl_sync(FULL_MASK, bitmap_of_tile, tile_cnt);
+                    int col_cur_tile = __shfl_sync(FULL_MASK, col_of_tile, tile_cnt);
+                    
 					// load requiring B rows to smem
 					for (int j=0; j<tn; ++j){
-						if (meta.z & (1>>j)){
-							curB[warp_id][j*32+lane_id] = mat_b[(meta.w+j)*k + col_idx + lane_id];
+						if (bitmap_cur_tile & (1>>j)){
+							curB[warp_id][j*32+lane_id] = mat_b[(col_cur_tile+j)*k + col_idx + lane_id];
 						}
 					}
 					__syncwarp(); // I doubt if it is necessary besause warp is the minimum sheduling unit
 
+					// visit all nz of the sparse tile
 					int steps = 1;
-					// a sparse tile
-					for (int kk=meta.x; kk<meta.x+meta.y; kk+=steps){
-						uint32_t mask_join = __ballot_sync(FULL_MASK, kk+lane_id<meta.x+meta.y);
+                    int cur_end = start_cur_tile+nnz_cur_tile;
+					for (int kk=start_cur_tile; kk<cur_end; kk+=steps){
+					    uint32_t mask_join = __ballot_sync(FULL_MASK, kk+lane_id<cur_end);
                 		steps = __popc(mask_join);
 
-                		// load sparse nnz from glb mem
-                		float val = vals[kk+lane_id];
-                		int rcidx = rcOffset[kk+lane_id];
-
+                		float val = 0;
+                		int rcidx = 0;
+                        if (kk+lane_id<cur_end){
+                		    // load sparse nnz from glb mem
+                		    val = vals[kk+lane_id];
+                		    rcidx = rcOffset[kk+lane_id];
+                        }
                 		// exchange nnz within a warp && perfom FMA
                 		for (int it=0; it<steps; ++it){
                 			float v = __shfl_sync(FULL_MASK, val, it);
@@ -1333,24 +1362,19 @@ void flexspgemm_cuda_wo_pre_v4(int* metaTile,
 
                 			res[rc>>16] += v * curB[warp_id][(rc & 0x0000ffff)*32 + lane_id];
                 		}
-					}
+					}// end visiting all nz in a sparse tile
 
-					// if MSB of meta.w is 1, we know the current tile is the last in current tile-row
-					if (meta.w & (1<<32)){
-						flag = false;
-					}else{
-						meta = reinterpret_cast<int4*>(metaTile)[++i];
-					}
-				}
+                }// end visiting all loaded sparse tiles
+            }// end visiting all sparse tiles in cur tile-row
 
-				// store C tiles back to global mem
-				#pragma unroll
-				for (int c=0; c<tm, ++c){
-					mat_c[(row_idx*tm+c)*k+col_idx+lane_id] = res[c];
-					res[c] = 0;
-				}
-
-			} // end C column loops
-		} // end if
+			// store C tiles back to global mem
+            #pragma unroll
+            for (int c=0; c<tm; ++c){
+                if (row_idx*tm+c<spH){
+                    mat_c[(row_idx*tm+c)*k+col_idx+lane_id] = res[c];
+                }
+                res[c] = 0;
+            }
+		} // end C column loops
 	} // end C row loops
 }
