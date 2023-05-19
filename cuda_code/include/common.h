@@ -42,6 +42,7 @@ public:
     std::vector<float> flex_spgemm_time;
     std::vector<float> flex_spgemm_throughput;
     std::vector<float> flex_spgemm_bandwidth;
+    std::vector<int> flex_spgemm_errors;
 };
 
 #define CUDA_CHECK(err)                                                                            \

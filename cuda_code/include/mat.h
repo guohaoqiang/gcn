@@ -41,7 +41,8 @@ public:
 	vector<unsigned int> warp_tileRow_idx;
 
     // v4  kernel
-    vector<int> metaTile;
+    vector<int> nnzTile;
+    vector<int> bitMap;
     vector<int> rcOffset;
 
 	// regular sparse-tile storage
@@ -116,11 +117,11 @@ void mat<TM,TN>::print1(){
 template<int TM, int TN>
 void mat<TM,TN>::print2(){
 #ifdef DEBUG
-	/*
     for (int i=0; i<tileRowPtr.size(); ++i)
 		std::cout<<tileRowPtr[i]<<" ";
 	std::cout<<std::endl;
     
+	/*
 	for (int i=0; i<nnzPtr.size(); ++i)
 		std::cout<<nnzPtr[i]<<" ";
 	std::cout<<std::endl;
@@ -143,13 +144,19 @@ void mat<TM,TN>::print2(){
 	std::cout<<std::endl;
     */
 #endif
-    std::cout<<std::endl<<"metaTile:"<<std::endl;
-    for (int i=0; i<metaTile.size(); ++i){
-		if (i%4==0) std::cout<<"|";
-        std::cout<<metaTile[i]<<" ";
+    std::cout<<std::endl<<"nnzTile:"<<std::endl;
+    //for (int i=0; i<nnzTile.size(); ++i){
+    for (int i=0; i<20; ++i){
+        std::cout<<nnzTile[i]<<" ";
+    }
+    std::cout<<std::endl<<"bitMap:"<<std::endl;
+    //for (int i=0; i<bitMap.size(); ++i){
+    for (int i=0; i<20; ++i){
+        std::cout<<bitMap[i]<<" ";
     }
     std::cout<<std::endl<<"rc:"<<std::endl;
-	for (int i=0; i<rcOffset.size(); ++i){
+	//for (int i=0; i<rcOffset.size(); ++i){
+	for (int i=0; i<20; ++i){
 		int r = rcOffset[i]>>16;
 		int c = rcOffset[i] & 0x0000FFFF;
         std::cout<<"{"<<r<<","<<c<<"}"<<" ";
@@ -254,16 +261,13 @@ void mat<TM,TN>::csr2flex(int ridx){
 		}
         
         // ---------- v4 -------
-        metaTile.push_back(tileStart); // meta.x: nnzPtr  
         tileStart = nnzPtr.back()+nnzInTile; 
         // mark the last tile in current row-tile
-        if (pos>=rowPtr[rowEnd]){
-            //bit_map |= (1<<30);
-            nnzInTile |= (1<<31);
-        }
-        metaTile.push_back(nnzInTile); // meta.y: #nnz in the current tile (nnzPtr+#nnz == the start of next tile)
-        metaTile.push_back(bit_map); // meta.z: bit_map to mark B rows required by the current tile
-        metaTile.push_back(left); // meta.w: column idx of the current tile. MSB bit "1" indicates its the last tile in current row-tiles
+        //if (pos>=rowPtr[rowEnd]){
+        //    nnzInTile |= (1<<31);
+        //}
+        nnzTile.push_back(nnzInTile); 
+        bitMap.push_back(bit_map); 
         // ---------------------
 		
 		nnzPtr.push_back(nnzPtr.back()+nnzInTile);

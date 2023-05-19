@@ -1,5 +1,177 @@
 #include "../include/flex.cuh"
 /*
+__device__ __forceinline__
+uint32_t glm_u32addr(const void *glm_ptr) {
+    uint32_t addr;
+    asm ("{.reg .u64 u64addr;\n"
+         " cvta.to.global.u64 u64addr, %1;\n"
+         " cvt.u32.u64 %0, u64addr;}\n"
+         : "=r"(addr)
+         : "l"(glm_ptr)
+    );
+    return addr;
+}
+__device__ __forceinline__
+void ldg64(int &reg0, int &reg1, const uint32_t &addr) {
+    asm volatile (
+        "ld.global.v2.u32 {%0, %1}, [%2];\n"
+        : "=r"(reg0), "=r"(reg1)
+        : "r"(addr)
+    );
+}
+*/
+// args:
+//		tileRowPtr: tile ptr for the 1st tile in each row
+//		nnzPtr: ptr for the 1st non zero entry of each tile
+// 		nnz: #nnz of each tile
+// 		bitMap: mark B rows required by the each tile
+// 		tileLeftCol: column idx of each tile. // tba: MSB bit "1" indicates its the last tile in current row-tiles
+//      rcOffset: row and column indexfor each non-zero entry
+//		vals: non-zero entries
+// 		spH: height of sparseMat
+// 		mat_b: input dense mat
+//		k: width of mat_b
+//		mat_c: output dense mat
+// A: sparse, m * n
+// B: dense, n * k   (k << n)
+template<int tm, int tn, int warps>
+__global__
+void flexspgemm_cuda_wo_pre_v4(int* tileRowPtr,
+                int* nnzPtr,
+                int* nnz,
+                int* bitMap,
+                int* tileLeftCol,
+				int* rcOffset,
+				float* vals,
+				int spH,
+				float* mat_b,
+				int k,
+                float* mat_c){
+	const uint32_t WARPSZ = 32;
+	const uint32_t lane_id = threadIdx.x % WARPSZ;
+    const uint32_t warp_id = threadIdx.x / WARPSZ;
+	//const uint32_t warps = (blockDim.x + WARPSZ - 1)/WARPSZ;
+
+    //if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+        //printf("@63:    processing is ahead\n");
+    //}
+	// now we restrain "tn" in {4,8,16,32}
+	__shared__ float curB[warps][tn*32]; // 2 warps && each warp needs tn*8*4 matB float entries
+	float res[tm];
+	#pragma unroll
+	for (int i=0; i<tm; ++i){
+		res[i] = 0;
+	}
+
+
+	int computeWidth = 1; // # of C entries to be computed by a thread
+	int tileRows_perBlk = 1; // # row tiles per block
+	for (int row_idx=blockIdx.x*tileRows_perBlk; row_idx<(spH+tm-1)/tm; row_idx += (gridDim.x*tileRows_perBlk)){ // over C rows
+	   
+        int tile_curR_id = 0, tile_nxtR_id = 0;
+        int temp_tile_id = 0;
+        if (lane_id<2){
+            temp_tile_id = tileRowPtr[row_idx+lane_id]; 
+        }
+        __syncwarp();
+        tile_curR_id = __shfl_sync(FULL_MASK, temp_tile_id, 0);
+        tile_nxtR_id = __shfl_sync(FULL_MASK, temp_tile_id, 1);
+
+        //if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+        //    printf("@81:    gridDim.x = %d, row_idx = %d, tile_curR_id = %d, tile_nxtR_id = %d\n", gridDim.x, row_idx, tile_curR_id, tile_nxtR_id);
+        //}    
+        
+        for (int col_idx=warp_id*(32*computeWidth); col_idx<k; col_idx += warps*(32*computeWidth)){  // over C tile columns
+             
+            int tiles = 0;
+
+            for (int tile_id=tile_curR_id; tile_id<tile_nxtR_id; tile_id+=tiles){
+
+                uint32_t mask_tiles = __ballot_sync(FULL_MASK, tile_id+lane_id<tile_nxtR_id);
+                tiles = __popc(mask_tiles); // maximum # tiles can be loaded in cur row 
+                //if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                //    printf("@91:    col_idx = %d, tiles = %d\n", col_idx, tiles);
+                //} 
+                
+                int start_of_tile = 0, nnz_of_tile = 0, bitmap_of_tile = 0, col_of_tile = 0;
+                if (tile_curR_id+lane_id<tile_nxtR_id){
+                    // load as many as as tile info of cur tile-row
+                    start_of_tile = nnzPtr[tile_id+lane_id];
+                    nnz_of_tile = nnz[tile_id+lane_id];
+                    bitmap_of_tile = bitMap[tile_id+lane_id];
+                    col_of_tile = tileLeftCol[tile_id+lane_id];
+                }
+
+                //if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                //    printf("@106:    start_of_tile = %d, nnz_of_tile = %d, bitmap_of_tile = %d, col_of_tile = %d\n", start_of_tile, nnz_of_tile, bitmap_of_tile, col_of_tile);
+                //} 
+
+                // use all loaded tiles
+                for(int tile_cnt = 0; tile_cnt<tiles; ++tile_cnt){
+                    int start_cur_tile = __shfl_sync(FULL_MASK, start_of_tile, tile_cnt);
+                    int nnz_cur_tile = __shfl_sync(FULL_MASK, nnz_of_tile, tile_cnt);
+                    int bitmap_cur_tile = __shfl_sync(FULL_MASK, bitmap_of_tile, tile_cnt);
+                    int col_cur_tile = __shfl_sync(FULL_MASK, col_of_tile, tile_cnt);
+                    
+                    //if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                    //    printf("@118:    start_cur_tile = %d, nnz_cur_tile = %d, bitmap_cur_tile = %d, col_cur_tile = %d\n", start_cur_tile, nnz_cur_tile, bitmap_cur_tile, col_cur_tile);
+                    //} 
+					// load requiring B rows to smem
+					for (int j=0; j<tn; ++j){
+						if ((bitmap_cur_tile & (1<<j)) && col_idx+lane_id<k){
+                            curB[warp_id][j*32+lane_id] = mat_b[(col_cur_tile+j)*k + col_idx + lane_id];
+                            //if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                            //    printf("@122:   c = %d, B = %f, shB = %f\n", col_cur_tile+j, mat_b[(col_cur_tile+j)*k + col_idx + lane_id], curB[warp_id][j*32+lane_id]);
+                            //}
+						}
+					}
+					__syncwarp(); // I doubt if it is necessary besause warp is the minimum sheduling unit
+
+					// visit all nz of the sparse tile
+					int steps = 1;
+                    int cur_end = start_cur_tile+nnz_cur_tile;
+					for (int kk=start_cur_tile; kk<cur_end; kk+=steps){
+					    uint32_t mask_join = __ballot_sync(FULL_MASK, kk+lane_id<cur_end);
+                		steps = __popc(mask_join);
+
+                		float val = 0;
+                		int rcidx = 0;
+                        if (kk+lane_id<cur_end){
+                		    // load sparse nnz from glb mem
+                		    val = vals[kk+lane_id];
+                		    rcidx = rcOffset[kk+lane_id];
+                        }
+                		// exchange nnz within a warp && perfom FMA
+                		for (int it=0; it<steps; ++it){
+                			float v = __shfl_sync(FULL_MASK, val, it);
+                			int rc = __shfl_sync(FULL_MASK, rcidx, it);
+
+                            //if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                            //    printf("@148:   v = %f, r = %d, c = %d, B = %f\n", v, rc>>16, rc & 0x0000ffff, curB[warp_id][(rc & 0x0000ffff)*32 + lane_id]);
+                            //} 
+
+                			res[rc>>16] += v * curB[warp_id][(rc & 0x0000ffff)*32 + lane_id];
+                		}
+					}// end visiting all nz in a sparse tile
+                    
+                    //if (blockIdx.x==0 && warp_id==0 && lane_id==0){
+                    //    printf("@156:   tile_id = %d -------------------------------\n", tile_cnt);
+                    //} 
+                }// end visiting all loaded sparse tiles
+            }// end visiting all sparse tiles in cur tile-row
+            
+			// store C tiles back to global mem
+            #pragma unroll
+            for (int c=0; c<tm; ++c){
+                if (row_idx*tm+c<spH){
+                    mat_c[(row_idx*tm+c)*k+col_idx+lane_id] = res[c];
+                }
+                res[c] = 0;
+            }
+		} // end C column loops
+	} // end C row loops
+}
+/*
 void run_test(float* h_res_c, DataLoader& input, 
                 const float* mat_b, 
                 int tilem,
@@ -56,7 +228,7 @@ void run(DataLoader& input){
         mat<4,4> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
 	    //data.print2();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<4,4>, 4, 4>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -65,12 +237,13 @@ void run(DataLoader& input){
             for (size_t j=0; j<input.dim; ++j){
                 if (abs(h_ref_c[i*input.dim+j]-h_res_c[i*input.dim+j])>=0.01){
                     count++;
-                    //if (j==0) 
-                    //std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
+                    if (j==0 && i<4) 
+                    std::cout<<"ref["<<i<<"]["<<j<<"]="<<h_ref_c[i*input.dim+j]<<", "<<"gpuC["<<i<<"]["<<j<<"]="<<h_res_c[i*input.dim+j]<<std::endl;
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@246:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -78,7 +251,7 @@ void run(DataLoader& input){
     {
         mat<8,8> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<8,8>, 8, 8>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -92,7 +265,8 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@269:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -101,7 +275,7 @@ void run(DataLoader& input){
         mat<16,16> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
         //data.print2();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<16,16>, 16, 16>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -115,7 +289,8 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@293:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -123,7 +298,7 @@ void run(DataLoader& input){
     {
         mat<32,32> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<32,32>, 32, 32>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -137,7 +312,8 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@316:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -145,7 +321,7 @@ void run(DataLoader& input){
     {
         mat<8,16> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<8,16>, 8, 16>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -159,7 +335,8 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@339:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -167,7 +344,7 @@ void run(DataLoader& input){
     {
         mat<16,8> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<16,8>, 16, 8>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -181,7 +358,8 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@362:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -189,7 +367,7 @@ void run(DataLoader& input){
     {
         mat<8,32> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<8,32>, 8, 32>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -203,15 +381,16 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@385:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
-#ifdef REC32X8
+#ifdef RECT32X8
     {
         mat<32,8> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<32,8>, 32, 8>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -225,7 +404,8 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@408:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -233,7 +413,7 @@ void run(DataLoader& input){
     {
         mat<16,32> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<16,32>, 16, 32>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -247,7 +427,8 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@431:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -255,7 +436,7 @@ void run(DataLoader& input){
     {
         mat<32,16> data(input.cpuA->row, input.cpuA->col, input.cpuA->vals, input.cpuA->r, input.dim, input.cpuA->nnz);
 	    data.csr2tile();
-        flexspgemm(h_res_c, data, host_mat_b, perfRes);
+        flexspgemm<mat<32,16>, 32, 16>(h_res_c, data, host_mat_b, perfRes);
     
         // verify results
         int count = 0;
@@ -269,7 +450,8 @@ void run(DataLoader& input){
                 }
             }
         }
-        std::cout<<"Wrong results: "<<count<<std::endl;
+        perfRes.flex_spgemm_errors.push_back(count);
+        std::cout<<"@454:   Wrong results: "<<count<<std::endl;
         memset(h_res_c, 0, input.n*input.dim*sizeof(float));
     }
 #endif
@@ -282,80 +464,91 @@ void run(DataLoader& input){
         <<setw(18)<<left<<" tile size (tm X tn) "
         <<setw(20)<<left<<"  dense mat (N X K) "
         <<setw(15)<<left<<" cuspgemm t "
-        <<setw(15)<<left<<" flex_spgemm t "<<std::endl;
+        <<setw(15)<<left<<" flex_spgemm t "
+        <<setw(20)<<left<<" flex_spgemm errors "<<std::endl;
 #ifdef CUBE4X4
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 4 X 4 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[0])<<std::endl;
 #endif
 #ifdef CUBE8X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 8 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[1])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[1])<<std::endl;
 #endif
 #ifdef CUBE16X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 16 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[1])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[2])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[2])<<std::endl;
 #endif
 #ifdef CUBE32X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 32 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[2])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[3])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[3])<<std::endl;
 #endif
 #ifdef RECT8X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 8 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[4])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[4])<<std::endl;
 #endif
 #ifdef RECT16X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 16 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[5])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[5])<<std::endl;
 #endif
 #ifdef RECT8X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 8 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[6])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[6])<<std::endl;
 #endif
 #ifdef RECT32X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 32 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[7])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[7])<<std::endl;
 #endif
 #ifdef RECT16X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 16 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[8])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[8])<<std::endl;
 #endif
 #ifdef RECT32X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 32 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[9])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[9])<<std::endl;
 #endif
 }
 
-template<typename MT>
+template<typename MT, int tm, int tn>
 void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 
 	// allocate device memory
@@ -385,14 +578,16 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
    
 
     // v4 kernel
-    int* d_metaTile; 
-	CHECK_CUDA(cudaMalloc(&d_metaTile, data.metaTile.size()*sizeof(int)));
+    int* d_tileRowPtr; 
+	CHECK_CUDA(cudaMalloc(&d_tileRowPtr, data.tileRowPtr.size()*sizeof(int)));
     //std::cout<<"@536: metaTile.size() = "<<data.metaTile.size()<<std::endl;
+    int* d_nnzTile; 
+	CHECK_CUDA(cudaMalloc(&d_nnzTile, data.nnzTile.size()*sizeof(int)));
+    int* d_bitMap; 
+	CHECK_CUDA(cudaMalloc(&d_bitMap, data.bitMap.size()*sizeof(int)));
     int* d_rcOffset; 
 	CHECK_CUDA(cudaMalloc(&d_rcOffset, data.rcOffset.size()*sizeof(int)));
     //std::cout<<"@539: rcOffset.size() = "<<data.rcOffset.size()<<std::endl;
-    int* d_tileRowPtr; 
-	CHECK_CUDA(cudaMalloc(&d_tileRowPtr, data.tileRowPtr.size()*sizeof(int)));
 
 	//data.print2();
 
@@ -426,9 +621,10 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 	//cudaMemcpy(d_mat_c, mat_c, data.m*data.k*sizeof(float), cudaMemcpyHostToDevice);
 
     // v4 kernel
-	cudaMemcpy(d_metaTile, data.metaTile.data(), data.metaTile.size()*sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy(d_rcOffset, data.rcOffset.data(), data.rcOffset.size()*sizeof(int), cudaMemcpyHostToDevice);
 	cudaMemcpy(d_tileRowPtr, data.tileRowPtr.data(), data.tileRowPtr.size()*sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_nnzTile, data.nnzTile.data(), data.nnzTile.size()*sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_bitMap, data.bitMap.data(), data.bitMap.size()*sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy(d_rcOffset, data.rcOffset.data(), data.rcOffset.size()*sizeof(int), cudaMemcpyHostToDevice);
     
 
 	// each thread block has 2 warps
@@ -441,6 +637,8 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
     //std::cout<<"warp_tileRow_idx:"<<std::endl;
     //print(warp_tileRow_idx);
 	
+    int gridx = (data.m+tm-1)/tm;
+    int threads = 128;
     // warm up
     for (int i=0; i<5; ++i){
      /*
@@ -456,20 +654,27 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
                                                 d_mat_b, 
                                                 d_mat_c);
        */ 
-        //flexspgemm_cuda_wo_pre_v4<4,4,2><<<grid,64>>>(d_metaTile, d_rcOffset, 
-        //                                              d_vals, data.m,
-        //                                              d_mat_b, data.k, d_mat_c);
-        cudaMemset(d_mat_c, 0.0, data.m*data.k*sizeof(float));
+        flexspgemm_cuda_wo_pre_v4<tm, tn, 4><<<gridx,threads>>>(d_tileRowPtr, 
+                                                             d_tileNnz, 
+                                                             d_nnzTile,
+                                                             d_bitMap,
+                                                             d_tileColIdx,
+                                                             d_rcOffset, 
+                                                             d_vals, 
+                                                             data.m,
+                                                             d_mat_b, 
+                                                             data.k, 
+                                                             d_mat_c);
     }
+    cudaMemset(d_mat_c, 0.0, data.m*data.k*sizeof(float));
     // run test
     float spgemm_duration;
     cudaEvent_t spgemm_start, spgemm_stop;
 	cudaEventCreate(&spgemm_start);
 	cudaEventCreate(&spgemm_stop);
     float elap_t = 0; 
-    int gridx = (data.m+3)/4;
-    for (int i=0; i<5; ++i){
-        std::cout<<"@650 -----------------------   i = "<<i<<" gridx = "<<gridx<<std::endl;
+    for (int i=0; i<10; ++i){
+        //std::cout<<"@618 -----------------------   i = "<<i<<" gridx = "<<gridx<<std::endl;
         cudaEventRecord(spgemm_start);
         /*
         //flexspgemm_cuda_reg_pre_v2<<<grid, 64>>>(d_tileNnz,
@@ -484,15 +689,19 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
                                         d_mat_b,
                                         d_mat_c);
 	    */
-        flexspgemm_cuda_wo_pre_v4<4,4,2><<<(gridx+3)/4,64>>>(d_tileRowPtr, 
-                                                              data.tileRowPtr.back(),
-                                                              d_metaTile, 
-                                                              d_rcOffset, 
-                                                              d_vals, 
-                                                              data.m,
-                                                              d_mat_b, 
-                                                              data.k, 
-                                                              d_mat_c);
+        
+        flexspgemm_cuda_wo_pre_v4<tm, tn, 4><<<gridx,threads>>>(d_tileRowPtr, 
+                                                             d_tileNnz, 
+                                                             d_nnzTile,
+                                                             d_bitMap,
+                                                             d_tileColIdx,
+                                                             d_rcOffset, 
+                                                             d_vals, 
+                                                             data.m,
+                                                             d_mat_b, 
+                                                             data.k, 
+                                                             d_mat_c);
+        
         cudaEventRecord(spgemm_stop);
 	    cudaEventSynchronize(spgemm_stop);
 	    cudaEventElapsedTime(&spgemm_duration, spgemm_start, spgemm_stop);
@@ -526,9 +735,12 @@ void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes){
 	CHECK_CUDA(cudaFree(d_r_c_Offset));
     CHECK_CUDA(cudaFree(d_vals));
 	CHECK_CUDA(cudaFree(d_mat_b));
+	CHECK_CUDA(cudaFree(d_mat_c));
     
     // v4 kernel
-    CHECK_CUDA(cudaFree(d_metaTile));
+    CHECK_CUDA(cudaFree(d_tileRowPtr));
+    CHECK_CUDA(cudaFree(d_nnzTile));
+    CHECK_CUDA(cudaFree(d_bitMap));
     CHECK_CUDA(cudaFree(d_rcOffset));
 }
 /*
@@ -666,6 +878,12 @@ void flexspgemm(float* h_res_c, const mat& data, const float* mat_b, Perfs& perf
 */
 
 void cuSpgemm(DataLoader& input, Perfs& perfRes){
+    float elap_t = 0.0;
+    float cuspgemm_duration;
+    cudaEvent_t cuspgemm_start, cuspgemm_stop;
+	cudaEventCreate(&cuspgemm_start);
+	cudaEventCreate(&cuspgemm_stop); 
+    
     const float alpha = 1.0;
     const float beta = 0.0;
 
@@ -674,6 +892,8 @@ void cuSpgemm(DataLoader& input, Perfs& perfRes){
     cusparseDnMatDescr_t matB, matC;
     void*                dBuffer    = NULL;
     size_t               bufferSize = 0;
+    
+    cudaEventRecord(cuspgemm_start);
     CHECK_CUSPARSE( cusparseCreate(&handle) )
     // Create sparse matrix A in CSR format
     CHECK_CUSPARSE( cusparseCreateCsr(&matA, input.cpuA->r, input.cpuA->c, input.cpuA->nnz,
@@ -694,6 +914,11 @@ void cuSpgemm(DataLoader& input, Perfs& perfRes){
                                  &alpha, matA, matB, &beta, matC, CUDA_R_32F,
                                  CUSPARSE_SPMM_CSR_ALG3, &bufferSize) )
     CHECK_CUDA( cudaMalloc(&dBuffer, bufferSize) )
+    
+    cudaEventRecord(cuspgemm_stop);
+    cudaEventSynchronize(cuspgemm_stop);
+    cudaEventElapsedTime(&cuspgemm_duration, cuspgemm_start, cuspgemm_stop);
+    elap_t += cuspgemm_duration;
 
     // warm-up
     for (int i=0; i<5; ++i){
@@ -704,11 +929,6 @@ void cuSpgemm(DataLoader& input, Perfs& perfRes){
                                  CUSPARSE_SPMM_CSR_ALG3, dBuffer))
     }
     // execute SpMM
-    float cuspgemm_duration;
-    cudaEvent_t cuspgemm_start, cuspgemm_stop;
-	cudaEventCreate(&cuspgemm_start);
-	cudaEventCreate(&cuspgemm_stop); 
-    float elap_t = 0.0;
     for (int i=0; i<10; ++i){
         cudaEventRecord(cuspgemm_start);
         CHECK_CUSPARSE(cusparseSpMM(handle,

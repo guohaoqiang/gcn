@@ -6,15 +6,15 @@
 #include "mat.h"
 #include "flex_spmm.cuh"
 #define CUBE4X4
-//#define CUBE8X8
-//#define CUBE16X16
-//#define CUBE32X32
-//#define RECT8X16
-//#define RECT16X8
-//#define RECT8X32
-//#define RECT32X8
-//#define RECT16X32
-//#define RECT32X16
+#define CUBE8X8
+#define CUBE16X16
+#define CUBE32X32
+#define RECT8X16
+#define RECT16X8
+#define RECT8X32
+#define RECT32X8
+#define RECT16X32
+#define RECT32X16
 /*
 void run_test(float* h_res_c, 
                 DataLoader& input, 
@@ -28,7 +28,7 @@ void run_test(float* h_res_c,
 void run(DataLoader& input);
 void cuSpgemm(DataLoader& input, Perfs& perfRes);
 
-template<typename MT>
+template<typename MT, int tm, int tn>
 void flexspgemm(float* h_res_c, MT& data, const float* mat_b, Perfs& perfRes);
 
 
