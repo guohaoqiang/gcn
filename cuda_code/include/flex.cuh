@@ -5,6 +5,7 @@
 #include "DataLoader.cuh"
 #include "mat.h"
 #include "flex_spmm.cuh"
+
 #define CUBE4X4
 #define RECT8X4
 #define RECT16X4
@@ -36,6 +37,7 @@
 #define RECT64X32
 #define RECT128X32
 #define RECT256X32
+
 
 /*
 void run_test(float* h_res_c, 

@@ -15,7 +15,14 @@ CXX_LINK_FLAGS = -lglog -lgflags -lpthread
 WARN_FLAGS = -g -Wall -Wextra -Wabi -Wctor-dtor-privacy -Wnon-virtual-dtor -Wreorder -Wstrict-null-sentinel -Woverloaded-virtual -Wshadow -Wcast-align -Wpointer-arith -Wwrite-strings -Wundef -Wredundant-decls
 
 NVXX = nvcc
-NVXXFLAGS = -arch sm_75
+# Turing:2080 super
+#NVXXFLAGS = -arch sm_75
+# Ampere:3080,3090
+NVXXFLAGS = -arch sm_86
+# Ada: 4090
+#NVXXFLAGS = -arch sm_89
+# Hopper: H100
+#NVXXFLAGS = -arch sm_90
 #NVXX_LINK_FLAGS = -lcusparse -lcublas -lcudart
 
 

@@ -135,3 +135,5 @@ dataset
 *.csv
 *.o
 *.mat
+exe
+*.out
