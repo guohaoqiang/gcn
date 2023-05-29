@@ -1,10 +1,13 @@
 #ifndef FLEX_H
 #define FLEX_H 
 #include <iostream>
+#include <fstream>
 #include "common.h"
 #include "DataLoader.cuh"
 #include "mat.h"
 #include "flex_spmm.cuh"
+#define OUTPUTCSV
+
 
 #define CUBE4X4
 #define RECT8X4

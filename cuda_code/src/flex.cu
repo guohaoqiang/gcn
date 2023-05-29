@@ -168,6 +168,7 @@ void flexspgemm_cuda_wo_pre_v4(int* tileRowPtr,
                 }
                 res[c] = 0;
             }
+    
 		} // end C column loops
 	} // end C row loops
 }
@@ -873,7 +874,7 @@ void run(DataLoader& input){
     free(h_ref_c);
     free(host_mat_b);
 
-
+    int show_idx = 0;
     std::cout<<setw(20)<<left<<"sparse mat (M X N) "
         <<setw(18)<<left<<" tile size (tm X tn) "
         <<setw(20)<<left<<"  dense mat (N X K) "
@@ -885,224 +886,238 @@ void run(DataLoader& input){
         <<setw(23)<<left<<" 4 X 4 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[0])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[0])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT8X4
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 8 X 4 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[1])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[1])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT16X4
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 16 X 4 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[2])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[2])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT32X4
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 32 X 4 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[3])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[3])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT64X4
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 64 X 4 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[4])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[4])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT128X4
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 128 X 4 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[5])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[5])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT256X4
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 256 X 4 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[6])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[6])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT4X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 4 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[7])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[7])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef CUBE8X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 8 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[8])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[8])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT16X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 16 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[9])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[9])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT32X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 32 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[10])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[10])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT64X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 64 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[11])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[11])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT128X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 128 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[12])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[12])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT256X8
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 256 X 8 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[13])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[13])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT4X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 4 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[14])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[14])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT8X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 8 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[15])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[15])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef CUBE16X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 16 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[16])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[16])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT32X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 32 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[17])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[17])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT64X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 64 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[18])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[18])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT128X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 128 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[19])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[19])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT256X16
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 256 X 16 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[20])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[20])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT4X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 4 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[21])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[21])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT8X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 8 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[22])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[22])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT16X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 16 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[23])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[23])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef CUBE32X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 32 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[24])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[24])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT64X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 64 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[25])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[25])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT128X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 128 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[26])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[26])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
 #endif
 #ifdef RECT256X32
     std::cout<<setw(20)<<left<<to_string(input.n)+" X "+to_string(input.n)
         <<setw(23)<<left<<" 256 X 32 "
         <<setw(19)<<left<<to_string(input.n)+" X "+to_string(input.dim)
         <<setw(15)<<left<<to_string(perfRes.cuspgemm_time)
-        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[27])
-        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[27])<<std::endl;
+        <<setw(15)<<left<<to_string(perfRes.flex_spgemm_time[show_idx])
+        <<setw(20)<<left<<to_string(perfRes.flex_spgemm_errors[show_idx++])<<std::endl;
+#endif
+#ifdef OUTPUTCSV
+    std::ofstream myfile(input.graph_name+"_time.csv");
+    myfile << "cuSpgemm," << "4X4,"<<"8X4,"<<"16X4,"<<"32X4,"<< "64X4,"<<"128X4,"<<"256X4"
+           << "4X8,"<<"8X8,"<<"16X8,"<<"32X8,"<< "64X8,"<<"128X8,"<<"256X8"
+           << "4X16,"<<"8X16,"<<"16X16,"<<"32X16,"<< "64X16,"<<"128X16,"<<"256X16"
+           << "4X32,"<<"8X32,"<<"16X32,"<<"32X32,"<< "64X32,"<<"128X32,"<<"256X32"<<"\n";
+    myfile << perfRes.cuspgemm_time << ",";
+    for (int i=0; i<perfRes.flex_spgemm_time.size(); ++i){
+        myfile << perfRes.flex_spgemm_time[i];
+        if (i<perfRes.flex_spgemm_time.size()-1)    myfile<<","; 
+    }
+    myfile << "\n";
+    myfile.close(); 
 #endif
 }
 

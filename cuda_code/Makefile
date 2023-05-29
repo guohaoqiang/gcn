@@ -18,11 +18,11 @@ NVXX = nvcc
 # Turing:2080 super
 #NVXXFLAGS = -arch sm_75
 # Ampere:3080,3090
-NVXXFLAGS = -arch sm_86
+#NVXXFLAGS = -arch sm_86
 # Ada: 4090
 #NVXXFLAGS = -arch sm_89
 # Hopper: H100
-#NVXXFLAGS = -arch sm_90
+NVXXFLAGS = -arch sm_90
 #NVXX_LINK_FLAGS = -lcusparse -lcublas -lcudart
 
 
