@@ -53,6 +53,17 @@ def to_tensor(adj, features, labels=None, device='cpu'):
         labels = torch.LongTensor(labels)
         return adj.to(device), features.to(device), labels.to(device)
 
+def to_tensor2(features, labels=None, device='cpu'):
+    if sp.issparse(features):
+        features = sparse_mx_to_torch_sparse_tensor(features)
+    else:
+        features = torch.FloatTensor(np.array(features))
+    if labels is None:
+        return features.to(device)
+    else:
+        labels = torch.LongTensor(labels)
+        return features.to(device), labels.to(device)
+
 def normalize_feature(mx):
     """Row-normalize sparse matrix"""
     if type(mx) is not sp.lil.lil_matrix:
@@ -120,6 +131,26 @@ def normalize_adj_tensor(adj, sparse=False):
         # but you need to install torch_scatter
         # return normalize_sparse_tensor(adj)
         adj = to_scipy(adj)
+        mx = normalize_adj(adj)
+        return sparse_mx_to_torch_sparse_tensor(mx).to(device)
+    else:
+        mx = adj + torch.eye(adj.shape[0]).to(device)
+        rowsum = mx.sum(1)
+        r_inv = rowsum.pow(-1/2).flatten()
+        r_inv[torch.isinf(r_inv)] = 0.
+        r_mat_inv = torch.diag(r_inv)
+        mx = r_mat_inv @ mx
+        mx = mx @ r_mat_inv
+    return mx
+
+def normalize_adj_tensor2(adj, sparse=False, device="cpu"):
+
+    #device = torch.device("cuda" if adj.is_cuda else "cpu")
+    if sparse:
+        # TODO if this is too slow, uncomment the following code,
+        # but you need to install torch_scatter
+        # return normalize_sparse_tensor(adj)
+        #adj = to_scipy(adj)
         mx = normalize_adj(adj)
         return sparse_mx_to_torch_sparse_tensor(mx).to(device)
     else:
@@ -216,7 +247,7 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
         np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
     values = torch.from_numpy(sparse_mx.data)
     shape = torch.Size(sparse_mx.shape)
-    return torch.sparse.FloatTensor(indices, values, shape)
+    return torch.sparse_coo_tensor(indices, values, shape)
 
 def to_scipy(tensor):
     """Convert a dense/sparse tensor to """

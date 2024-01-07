@@ -12,22 +12,32 @@ from copy import deepcopy
 from sklearn.metrics import f1_score
 from pygcn.writecsv import save 
 
+from pygcn.perf import dmk
+import ctypes
 
-class GraphConvolution1(Module):
+cuspmmLib = ctypes.cdll.LoadLibrary('./cuspmm.so')
+
+
+# A(XW)
+class GraphConvolution(Module):
     """
     Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
     """
 
-    def __init__(self, in_features, out_features, with_bias=True):
-        super(GraphConvolution1, self).__init__()
+    def __init__(self, in_features, out_features, with_bias=True, name='dataset', layer='layer0'):
+        super(GraphConvolution, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.weight = Parameter(torch.FloatTensor(in_features, out_features))
+        self.layer = layer
         if with_bias:
             self.bias = Parameter(torch.FloatTensor(out_features))
         else:
             self.register_parameter('bias', None)
         self.reset_parameters()
+        self.timers = dmk.Timers()
+        print(f"data: {name} -> layer = {layer}: A(XW) "
+              f"{in_features} ✕ {out_features}  bias {with_bias}" )
 
     def reset_parameters(self):
         # self.weight.data.fill_(1)
@@ -39,35 +49,74 @@ class GraphConvolution1(Module):
         if self.bias is not None:
             self.bias.data.uniform_(-stdv, stdv)
 
-    def forward(self, support, name='dataset', layer='layer0'):
-        t1 = time.time()    
-        output = torch.mm(support,self.weight)
-        t1 = time.time()-t1
-        if self.bias is not None:
-            return output + self.bias, t1
+    def reset_timing(self):
+        self.timers.reset()
+
+    def forward(self, input, adj):
+
+        if input.data.is_sparse:
+            if False:
+                print("@59...",input.is_sparse)
+                print("@60...",input.layout==torch.sparse_coo)
+                print("@61...",input.coalesce().indices().shape[0])
+                print("@62...",input.coalesce().indices().shape[1])
+                print("@63...",input.coalesce().values().shape[0])
+                print("@64...",type(input))
+                print("@65...",input.to_sparse_csr().crow_indices().shape)
+                print("@66...",input.to_sparse_csr().col_indices().shape)
+                print("@67...",input.to_sparse_csr().values().shape)
+            if False:
+                input_csr = input.to_sparse_csr()
+                m = input_csr.crow_indices().shape[0]-1 
+                n = input.to_sparse_csc().ccol_indices().shape[0]-1
+                nnz = input_csr.values().shape[0]
+                dim = self.weight.shape[1]
+                print("m=",m,",n=",n,",nnz=",nnz,",dim=",dim)
+                support = torch.zeros((m,dim), device='cuda')
+                with self.timers.hc.xw:
+                    cuspmmLib.cuspmm(ctypes.c_void_p(input_csr.crow_indices().data_ptr()), 
+                               ctypes.c_void_p(input_csr.col_indices().data_ptr()),
+                               ctypes.c_void_p(input_csr.values().data_ptr()),
+                               ctypes.c_void_p(self.weight.data_ptr()),
+                               ctypes.c_void_p(support.data_ptr()),
+                               m,n,nnz,dim)
+            else:
+                with self.timers.hc.xw:
+                    support = torch.spmm(input, self.weight)
         else:
-            return output, t1
+            with self.timers.hc.xw:
+                support = torch.mm(input, self.weight)
+        with self.timers.hc.af:
+          output = torch.spmm(adj, support)
+        if self.bias is not None:
+            with self.timers.hc.bi: output = output + self.bias
+        return output
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' \
                + str(self.in_features) + ' -> ' \
                + str(self.out_features) + ')'
 
+# (AX)W
 class GraphConvolution2(Module):
     """
     Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
     """
 
-    def __init__(self, in_features, out_features, with_bias=True):
+    def __init__(self, in_features, out_features, with_bias=True, name='dataset', layer='layer0'):
         super(GraphConvolution2, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.weight = Parameter(torch.FloatTensor(in_features, out_features))
+        self.layer = layer
         if with_bias:
             self.bias = Parameter(torch.FloatTensor(out_features))
         else:
             self.register_parameter('bias', None)
         self.reset_parameters()
+        self.timers = dmk.Timers()
+        print(f"data: {name} -> layer = {layer}: (AX)W "
+              f"{in_features} ✕ {out_features}  bias {with_bias}" )
 
     def reset_parameters(self):
         # self.weight.data.fill_(1)
@@ -79,21 +128,15 @@ class GraphConvolution2(Module):
         if self.bias is not None:
             self.bias.data.uniform_(-stdv, stdv)
 
-    def forward(self, input, adj, name='dataset', layer='layer0'):
-        
+    def reset_timing(self):
+        self.timers.reset()
 
-        
-        t1 = time.time()    
-        support = torch.spmm(adj, input)
-        t1 = time.time()-t1
-        
-        t2 = time.time()
-        output = torch.mm(support, self.weight)
-        t2 = time.time()-t2
+    def forward(self, input, adj):
+        with self.timers.hc.af: support = torch.spmm(adj, input)
+        with self.timers.hc.xw: output = torch.mm(support, self.weight)
         if self.bias is not None:
-            return output + self.bias, t1, t2
-        else:
-            return output, t1, t2
+            with self.timers.hc.bi: output = output + self.bias
+        return output
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' \
@@ -102,7 +145,8 @@ class GraphConvolution2(Module):
 
 class GCN(nn.Module):
 
-    def __init__(self, nfeat, nhid, nclass, dropout=0.5, lr=0.01, weight_decay=5e-4, with_relu=True, with_bias=True, device=None):
+    def __init__(self, nfeat, nhid, nclass, dataset,  
+            dropout=0.5, lr=0.01, weight_decay=5e-4, with_relu=True, with_bias=True, device=None):
 
         super(GCN, self).__init__()
 
@@ -111,8 +155,12 @@ class GCN(nn.Module):
         self.nfeat = nfeat
         self.hidden_sizes = [nhid]
         self.nclass = nclass
-        self.gc1 = GraphConvolution1(nfeat, nhid, with_bias=with_bias)
-        self.gc2 = GraphConvolution2(nhid, nclass, with_bias=with_bias)
+        self.dataname = dataset
+        self.gc1 = GraphConvolution(nfeat, nhid, with_bias=with_bias, name=dataset, layer='layer1')
+        if dataset=='pubmed' or dataset=='flickr': 
+            self.gc2 = GraphConvolution(nhid, nclass, with_bias=with_bias, name=dataset, layer='layer2')
+        else:
+            self.gc2 = GraphConvolution2(nhid, nclass, with_bias=with_bias, name=dataset, layer='layer2')
         self.dropout = dropout
         self.lr = lr
         if not with_relu:
@@ -126,41 +174,24 @@ class GCN(nn.Module):
         self.best_output = None
         self.adj_norm = None
         self.features = None
-        
-        self.t_fp = 0
-        self.t_bp = 0
-        self.t_fp_l1 = 0
-        self.t_fp_t1_l1 = 0
-        self.t_fp_t_relu = 0
-        self.t_fp_l2 = 0
-        self.t_fp_t1_l2 = 0
-        self.t_fp_t2_l2 = 0
+        self.dur_fwd = dmk.Timer()
 
+    def reset_timing(self):
+        self.dur_fwd.reset();
+        for gc in [self.gc1,self.gc2]: gc.reset_timing();
+        
     def forward(self, x, adj, name='dataset'):
         '''
             adj: normalized adjacency matrix
         '''
-        t_l1 = 0   # time cost in the first layer
-        t_l2 = 0   # time cost in the second layer
-        t_relu = 0
-        support = torch.sparse.mm(adj,x.to_dense().to(self.device))
-        if self.with_relu:
-            t_l1 = time.time()
-            x, t1_l1 = self.gc1(support, name, layer='Layer1')
-            t_l1 = time.time() - t_l1;
-            t_relu = time.time()
-            x = F.relu(x)
-            t_relu = time.time() - t_relu;
-        else:
-            t_l1 = time.time()
-            x, t1_l1 = self.gc1(support, name, layer='Layer1')
-            t_l1 = time.time() - t_l1;
-        
-        t_l2 = time.time()
-        x = F.dropout(x, self.dropout, training=self.training)
-        x, t1_l2, t2_l2  = self.gc2(x, adj, name, layer='Layer2')
-        t_l2 = time.time() - t_l2;
-        return F.log_softmax(x, dim=1), t_l1, t1_l1, t_relu, t_l2, t1_l2, t2_l2
+
+        with self.dur_fwd:
+          x = self.gc1(x, adj);
+          if self.with_relu: x = F.relu(x)
+          x = F.dropout(x, self.dropout, training=self.training)
+          x = self.gc2(x, adj)
+          x = F.log_softmax(x, dim=1)
+        return x
 
     def initialize(self):
         self.gc1.reset_parameters()
@@ -177,7 +208,7 @@ class GCN(nn.Module):
 
         if type(adj) is not torch.Tensor:
             print("Transform data to GPU device ...")
-            features, adj, labels = utils.to_tensor(features, adj, labels, device=self.device)
+            adj, features, labels = utils.to_tensor(adj, features, labels, device=self.device)
             #log.info(adj.dtype)
             #log.info(features.dtype)
             #return ;
@@ -185,6 +216,10 @@ class GCN(nn.Module):
             features = features.to(self.device)
             adj = adj.to(self.device)
             labels = labels.to(self.device)
+
+        print(f"Graph size: {features.shape[0]} vertices "
+              f"Input Features: {features.shape[1]} "
+              f"is_sp {features.data.is_sparse}" )
 
         if normalize:
             if utils.is_sparse_tensor(adj):
@@ -194,7 +229,7 @@ class GCN(nn.Module):
         else:
             adj_norm = adj
         
-        if utils.is_sparse_tensor(adj_norm):
+        if False and utils.is_sparse_tensor(adj_norm):
             save.write(adj_norm, name)
         
         self.adj_norm = adj_norm
@@ -209,50 +244,53 @@ class GCN(nn.Module):
             else:
                 self._train_with_val(labels, idx_train, idx_val, train_iters, verbose, name)
         
-        print('Forward time: {:.4f}s'.format(self.t_fp))
-        print('Layer1 time: {:.4f}s'.format(self.t_fp_l1))
-        print('Layer1 (AX)W time: {:.4f}s'.format(self.t_fp_t1_l1))
-        print('Layer reLU time: {:.4f}s'.format(self.t_fp_t_relu))
-        print('Layer2 time: {:.4f}s'.format(self.t_fp_l2))
-        print('Layer2 AX time: {:.4f}s'.format(self.t_fp_t1_l2))
-        print('Layer2 (AX)W time: {:.4f}s'.format(self.t_fp_t2_l2))
-        print('Backward time: {:.4f}s'.format(self.t_bp))
+        # print('Forward time: {:.4f}s'.format(self.t_fp))
+        # print(' Layer1 time: {:.4f}s'.format(self.t_fp_l1))
+        # print('     Layer1 spmm time: {:.4f}s'.format(self.t_fp_spmm_l1))
+        # print('     Layer1 mm time: {:.4f}s'.format(self.t_fp_mm_l1))
+        # print(' Layer2 time: {:.4f}s'.format(self.t_fp_l2))
+        # print('     Layer2 spmm time: {:.4f}s'.format(self.t_fp_spmm_l2))
+        # print('     Layer2 mm time: {:.4f}s'.format(self.t_fp_mm_l2))
+        # print('Backward time: {:.4f}s'.format(self.t_bp))
+
+        print(f"Forward time: {self.dur_fwd.s():.4f} s "
+              f"for {self.dur_fwd.n_calls} calls.");
+
+        for gc in [self.gc1,self.gc2]:
+            print(f"{gc.layer} xw: {gc.timers.h.xw.avms():6.4f} ms  "
+              f" cu {gc.timers.c.xw.avms():6.4f} ms "
+              f" af: {gc.timers.h.af.avms():7.4f} ms "
+              f" cu {gc.timers.c.af.avms():7.4f} ms "
+              f" bi: {gc.timers.h.bi.avms():7.4f} ms "
+              f" cu {gc.timers.c.bi.avms():7.4f} ms" );
 
     def _train_without_val(self, labels, idx_train, train_iters, verbose, name):
         print('_train_without_val')
         self.train()
         optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        
+
+        ti = dmk.Timers()
+        warmup_upto = 10 if train_iters >= 20 else 1 if train_iters == 1 else 0
+
         for i in range(train_iters):
             optimizer.zero_grad()
-            temp1 = time.time()
-            output, t_l1, t1_l1, t_relu, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
-            loss_train = F.nll_loss(output[idx_train], labels[idx_train])
-            self.t_fp += (time.time()-temp1)
-            
-            temp2 = time.time()
-            loss_train.backward()
-            optimizer.step()
-            self.t_bp += (time.time()-temp2)
-            
-            self.t_fp_l1 += t_l1
-            self.t_fp_t1_l1 += t1_l1 
-            self.t_fp_t_relu += t_relu
-            self.t_fp_l2 += t_l2
-            self.t_fp_t1_l2 += t1_l2
-            self.t_fp_t2_l2 += t2_l2
-            if verbose and i % 10 == 0:
-                print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
+            with ti.h.fwd:
+                output = self.forward(self.features, self.adj_norm, name)
 
-        self.eval()
-        output, t_l1, t1_l1, t_relu, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
-        self.t_fp_l1 += t_l1
-        self.t_fp_t1_l1 += t1_l1 
-        self.t_fp_t_relu += t_relu
-        self.t_fp_l2 += t_l2
-        self.t_fp_t1_l2 += t1_l2
-        self.t_fp_t2_l2 += t2_l2
-        
+            loss_train = F.nll_loss(output[idx_train], labels[idx_train])
+            with ti.h.bwd:
+                loss_train.backward()
+            optimizer.step()
+            if verbose and ( i % 10 == 0 or i == warmup_upto ):
+                print(f'Epoch {i:3d}, training loss: {loss_train.item():.6f}'
+                      f'  Fwd: {ti.h.fwd.avms():.3f} ms/iter'
+                      f'  Bwd: {ti.h.bwd.avms():.3f} ms/iter',
+                      end='')
+                ti.reset()
+                if i == warmup_upto:
+                    self.reset_timing();
+                    print(" Warmup ending.",end='')
+                print("");
         self.output = output
 
     def _train_with_val(self, labels, idx_train, idx_val, train_iters, verbose, name):

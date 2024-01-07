@@ -1,4 +1,4 @@
-import glog as log
+import logging as log
 import csv
 import torch
 import numpy as np

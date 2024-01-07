@@ -1,0 +1,1068 @@
+diff --git a/dmk.py b/dmk.py
+new file mode 100644
+index 0000000..dca318a
+--- /dev/null
++++ b/dmk.py
+@@ -0,0 +1,117 @@
++# Simple modules for measuring timing using host timer and CUDA events.
++
++import time
++import torch.cuda
++
++class _HTimers():
++  def __init__(self,tobject): self.tobject = tobject
++  def __getattr__(self,name): return self.tobject.gethtimer(name)
++class _CTimers():
++  def __init__(self,tobject): self.tobject = tobject
++  def __getattr__(self,name): return self.tobject.getctimer(name)
++class _HCTimers():
++  def __init__(self,tobject): self.tobject = tobject
++  def __getattr__(self,name): return self.tobject.gethctimer(name)
++
++class Timers():
++  def __init__(self):
++    self.htimers, self.ctimers = {}, {}
++    self.h, self.c, self.hc = _HTimers(self), _CTimers(self), _HCTimers(self)
++  def gethtimer(self,name):
++    if not name in self.htimers: self.htimers[name] = Timer()
++    return self.htimers[name]
++  def getctimer(self,name):
++    if not name in self.ctimers: self.ctimers[name] = CTimer()
++    return self.ctimers[name]
++  def gethctimer(self,name):
++    return HCTimer(self.gethtimer(name), self.getctimer(name))
++  def reset(self):
++    for t in (self.htimers,self.ctimers):
++      for x in t.values(): x.reset();
++
++class HCTimer():
++  def __init__(self,hti=None,cti=True):
++    self.h = hti if hti else Timer()
++    self.c = cti if isinstance(cti,CTimer) else CTimer(cti)
++    self.timers = (self.h,self.c)
++  def reset(self):
++    for x in self.timers: x.reset()
++  def __enter__(self):
++    for x in self.timers: x.start()
++  def __exit__(self,exc_type,exc_value,stack):
++    for x in self.timers: x.stop()
++    
++class Timer():
++  def __init__(self):
++    self.dur_ns = 0; self.t_start = time.perf_counter_ns(); self.n_calls = 0;
++  def reset(self):
++    self.dur_ns = 0; self.t_start = None; self.n_calls = 0;
++  def start(self):
++    self.t_start = time.perf_counter_ns()
++    return self;
++  def stop(self):
++    assert self.t_start != None
++    self.dur_ns += time.perf_counter_ns() - self.t_start;
++    self.t_start = None
++    self.n_calls += 1;
++    return self;
++  def __enter__(self): self.start()
++  def __exit__(self,exc_type,exc_value,stack): self.stop()
++  def __format__(self,spec): return format(self.dur_ns,spec)
++  def s(self): return self.dur_ns * 1e-9
++  def ms(self): return self.dur_ns * 1e-6
++  def us(self): return self.dur_ns * 1e-3
++  def ns(self): return self.dur_ns
++  def avns(self): return self.dur_ns / self.n_calls if self.n_calls else 0
++  def avs(self): return self.avns() * 1e-9
++  def avms(self): return self.avns() * 1e-6
++  def avus(self): return self.avns() * 1e-3
++
++
++class CTimer():
++  def __init__(self,on=True):
++    self.dur_ms = 0;
++    self.now_events = None
++    self.pending_events = [];
++    self.free_events = [];
++    self.timing_now = False
++    self.want_ctiming = on
++    self.cuda_init_check = on;
++    self.n_calls = 0
++  def reset(self):
++    self.harvest(all=True); self.dur_ms = 0; self.n_calls = 0;
++  def start(self):
++    assert not self.timing_now
++    self.timing_now = True
++    if self.cuda_init_check:
++      self.cuda_init_check = False
++      if not torch.cuda.is_initialized(): self.want_ctiming = False
++    if not self.want_ctiming: return;
++    self.harvest()
++    self.now_events = (
++      self.free_events.pop() if len(self.free_events) else
++      tuple( torch.cuda.Event(enable_timing=True,blocking=True) for x in (1,1)))
++    self.now_events[0].record();
++  def stop(self):
++    assert self.timing_now
++    self.timing_now = False;
++    self.n_calls += 1;
++    if not self.want_ctiming: return;
++    self.now_events[1].record();
++    self.pending_events.append(self.now_events);
++  def harvest(self, all = False):
++    while ( len(self.pending_events) and
++            ( all or self.pending_events[0][1].query() ) ):
++      start, stop = self.pending_events[0];
++      if all: stop.synchronize()
++      self.free_events.append( self.pending_events.pop(0) )
++      self.dur_ms += start.elapsed_time(stop);
++    assert not all or len(self.pending_events) == 0
++  def __enter__(self): self.start()
++  def __exit__(self,exc_type,exc_value,stack): self.stop()
++  def ms(self): self.harvest(all=True); return self.dur_ms
++  def s(self): return self.ms() * 1e-3
++  def us(self): return self.ms() * 1e3
++  def avms(self): return self.ms()/self.n_calls if self.n_calls else 0
++  def avs(self): return self.avms() * 1e-3
++  def avus(self): return self.avms() * 1e3
+diff --git a/profiling_gcn.py b/profiling_gcn.py
+index e0d3e2b..a14afb8 100644
+--- a/profiling_gcn.py
++++ b/profiling_gcn.py
+@@ -8,17 +8,20 @@ from numpy import argmax
+ import torch.nn.functional as F
+ from pygcn.gcnio.data import dataio
+ from pygcn.gcnio.util import utils
+-from pygcn.gcn4 import GCN
++from pygcn.gcn5 import GCN
+ import scipy.sparse
+ import json
+ from sklearn.preprocessing import StandardScaler
+-import glog as log
++import logging as log
+ import torch.optim as optim
+ 
++log.basicConfig(filename='profiling-gcn.log', level=log.INFO);
++
+ cuda = torch.cuda.is_available()
+-print('cuda: %s' % cuda)
+ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+-#device = 'cpu'
++# device = 'cpu'
++
++print(f'cuda available: {cuda}  device used: {device}')
+ 
+ def load_data(prefix, normalize=True):
+     adj_full = scipy.sparse.load_npz('./{}/adj_full.npz'.format(prefix))
+@@ -86,6 +89,8 @@ largegraphs = {'flickr','ppi','amazon','reddit','yelp'}
+ parser = argparse.ArgumentParser("Graph to be processed ... ")
+ parser.add_argument('-g','--graph')
+ parser.add_argument('-k','--hidden', type=int)
++parser.add_argument("-i",'--train-iters', dest='train_iters',
++                    type=int, default=100 )
+ args = parser.parse_args()
+ 
+ SMALL = False
+@@ -158,9 +163,11 @@ optimizer = optim.Adam(model.parameters(),
+ 
+ 
+ model = model.to(device)
++
+ TRAIN = 1
+ if TRAIN:
+-    model.fit(features, adj, labels, idx_train, train_iters=1, verbose=True, name=dataset)
++    model.fit(features, adj, labels, idx_train,
++              train_iters = args.train_iters, verbose=True, name=dataset)
+     torch.save(model.state_dict(),'./model/gcn.pt')
+ TEST = 0
+ if TEST:
+diff --git a/pygcn/gcn3.py b/pygcn/gcn3.py
+index adb9649..e3404b7 100644
+--- a/pygcn/gcn3.py
++++ b/pygcn/gcn3.py
+@@ -4,7 +4,7 @@ import math
+ import time
+ import torch
+ import torch.optim as optim
+-import glog as log
++import logging as log
+ from torch.nn.parameter import Parameter
+ from torch.nn.modules.module import Module
+ from pygcn.gcnio.util import utils
+diff --git a/pygcn/gcn4.py b/pygcn/gcn4.py
+new file mode 100644
+index 0000000..9911a09
+--- /dev/null
++++ b/pygcn/gcn4.py
+@@ -0,0 +1,398 @@
++import torch.nn as nn
++import torch.nn.functional as F
++import math
++import time
++import torch
++import torch.optim as optim
++import logging as log
++from torch.nn.parameter import Parameter
++from torch.nn.modules.module import Module
++from pygcn.gcnio.util import utils
++from copy import deepcopy
++from sklearn.metrics import f1_score
++from pygcn.writecsv import save 
++
++# A(XW)
++class GraphConvolution(Module):
++    """
++    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
++    """
++
++    def __init__(self, in_features, out_features, with_bias=True, name='dataset', layer='layer0'):
++        super(GraphConvolution, self).__init__()
++        self.in_features = in_features
++        self.out_features = out_features
++        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
++        if with_bias:
++            self.bias = Parameter(torch.FloatTensor(out_features))
++        else:
++            self.register_parameter('bias', None)
++        self.reset_parameters()
++        print('data: ', name, ' -> layer = ', layer, ': A(XW)')
++
++    def reset_parameters(self):
++        # self.weight.data.fill_(1)
++        # if self.bias is not None:
++        #     self.bias.data.fill_(1)
++
++        stdv = 1. / math.sqrt(self.weight.size(1))
++        self.weight.data.uniform_(-stdv, stdv)
++        if self.bias is not None:
++            self.bias.data.uniform_(-stdv, stdv)
++
++    def forward(self, input, adj, name='dataset', layer='layer0'):
++        t1 = 0
++        if input.data.is_sparse:
++            print(name+' : '+layer+' : '+'spmm')
++            t1 = time.time()
++            support = torch.spmm(input, self.weight)
++            t1 = time.time()-t1
++        else:
++            print(name+' : '+layer+' : '+'mm')
++            t1 = time.time()
++            support = torch.mm(input, self.weight)
++            t1 = time.time()-t1
++        t2 = time.time()    
++        output = torch.spmm(adj, support)
++        t2 = time.time()-t2
++        if self.bias is not None:
++            print("@59: ",layer)
++            if layer=='layer1':
++                return output + self.bias, t2+t1, 0
++            else:
++                return output + self.bias, t2, t1
++        else:
++            if layer=='layer1':
++                return output, t2+t1, 0
++            else:
++                return output, t2, t1
++
++    def __repr__(self):
++        return self.__class__.__name__ + ' (' \
++               + str(self.in_features) + ' -> ' \
++               + str(self.out_features) + ')'
++
++# (AX)W
++class GraphConvolution2(Module):
++    """
++    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
++    """
++
++    def __init__(self, in_features, out_features, with_bias=True, name='dataset', layer='layer0'):
++        super(GraphConvolution2, self).__init__()
++        self.in_features = in_features
++        self.out_features = out_features
++        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
++        if with_bias:
++            self.bias = Parameter(torch.FloatTensor(out_features))
++        else:
++            self.register_parameter('bias', None)
++        self.reset_parameters()
++        print('data: ', name, ' -> layer = ', layer, ': (AX)W')
++
++    def reset_parameters(self):
++        # self.weight.data.fill_(1)
++        # if self.bias is not None:
++        #     self.bias.data.fill_(1)
++
++        stdv = 1. / math.sqrt(self.weight.size(1))
++        self.weight.data.uniform_(-stdv, stdv)
++        if self.bias is not None:
++            self.bias.data.uniform_(-stdv, stdv)
++
++    def forward(self, input, adj, name='dataset', layer='layer0'):
++         
++        t1 = time.time()    
++        support = torch.spmm(adj, input)
++        t1 = time.time()-t1
++        
++        t2 = time.time()
++        output = torch.mm(support, self.weight)
++        t2 = time.time()-t2
++        if self.bias is not None:
++            return output + self.bias, t1, t2
++        else:
++            return output, t1, t2
++
++    def __repr__(self):
++        return self.__class__.__name__ + ' (' \
++               + str(self.in_features) + ' -> ' \
++               + str(self.out_features) + ')'
++
++class GCN(nn.Module):
++
++    def __init__(self, nfeat, nhid, nclass, dataset,  
++            dropout=0.5, lr=0.01, weight_decay=5e-4, with_relu=True, with_bias=True, device=None):
++
++        super(GCN, self).__init__()
++
++        assert device is not None, "Please specify 'device'!"
++        self.device = device
++        self.nfeat = nfeat
++        self.hidden_sizes = [nhid]
++        self.nclass = nclass
++        self.dataname = dataset
++        self.gc1 = GraphConvolution(nfeat, nhid, with_bias=with_bias, name=dataset, layer='layer1')
++        if dataset=='pubmed' or dataset=='flickr': 
++            self.gc2 = GraphConvolution(nhid, nclass, with_bias=with_bias, name=dataset, layer='layer2')
++        else:
++            self.gc2 = GraphConvolution2(nhid, nclass, with_bias=with_bias, name=dataset, layer='layer2')
++        self.dropout = dropout
++        self.lr = lr
++        if not with_relu:
++            self.weight_decay = 0
++        else:
++            self.weight_decay = weight_decay
++        self.with_relu = with_relu
++        self.with_bias = with_bias
++        self.output = None
++        self.best_model = None
++        self.best_output = None
++        self.adj_norm = None
++        self.features = None
++        
++        self.t_fp = 0
++        self.t_bp = 0
++        self.t_fp_l1 = 0
++        self.t_fp_spmm_l1 = 0
++        self.t_fp_mm_l1 = 0
++        self.t_fp_l2 = 0
++        self.t_fp_spmm_l2 = 0
++        self.t_fp_mm_l2 = 0
++
++    def forward(self, x, adj, name='dataset'):
++        '''
++            adj: normalized adjacency matrix
++        '''
++        t_l1 = 0   # time cost in the first layer
++        t_l2 = 0   # time cost in the second layer
++        t_relu = 0
++        if self.with_relu:
++            t_l1 = time.time()
++            x, t1_l1, t2_l1 = self.gc1(x, adj, name, layer='layer1')
++            t_l1 = time.time() - t_l1;
++            
++            t_relu = time.time()
++            x = F.relu(x)
++            t_relu = time.time() - t_relu;
++        else:
++            t_l1 = time.time()
++            x, t1_l1, t2_l1 = self.gc1(x, adj, name, layer='layer1')
++            t_l1 = time.time() - t_l1;
++        
++        t_l2 = time.time()
++        x = F.dropout(x, self.dropout, training=self.training)
++        x, t1_l2, t2_l2  = self.gc2(x, adj, name, layer='layer2')
++        t_l2 = time.time() - t_l2;
++        return F.log_softmax(x, dim=1), t1_l1, t2_l1, t_l1, t1_l2, t2_l2, t_l2
++
++    def initialize(self):
++        self.gc1.reset_parameters()
++        self.gc2.reset_parameters()
++
++    def fit(self, features, adj, labels, idx_train, idx_val=None, train_iters=200, initialize=True, verbose=False, normalize=True, patience=500, name='dataset'):
++        '''
++            train the gcn model, when idx_val is not None, pick the best model
++            according to the validation loss
++        '''
++        self.device = self.gc1.weight.device
++        if initialize:
++            self.initialize()
++
++        if type(adj) is not torch.Tensor:
++            print("Transform data to GPU device ...")
++            features, adj, labels = utils.to_tensor(features, adj, labels, device=self.device)
++            #log.info(adj.dtype)
++            #log.info(features.dtype)
++            #return ;
++        else:
++            features = features.to(self.device)
++            adj = adj.to(self.device)
++            labels = labels.to(self.device)
++
++        if normalize:
++            if utils.is_sparse_tensor(adj):
++                adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
++            else:
++                adj_norm = utils.normalize_adj_tensor(adj)
++        else:
++            adj_norm = adj
++        
++        if False and utils.is_sparse_tensor(adj_norm):
++            save.write(adj_norm, name)
++        
++        self.adj_norm = adj_norm
++        self.features = features
++        self.labels = labels
++        
++        if idx_val is None:
++            self._train_without_val(labels, idx_train, train_iters, verbose, name)
++        else:
++            if patience < train_iters:
++                self._train_with_early_stopping(labels, idx_train, idx_val, train_iters, patience, verbose, name)
++            else:
++                self._train_with_val(labels, idx_train, idx_val, train_iters, verbose, name)
++        
++        print('Forward time: {:.4f}s'.format(self.t_fp))
++        print(' Layer1 time: {:.4f}s'.format(self.t_fp_l1))
++        print('     Layer1 spmm time: {:.4f}s'.format(self.t_fp_spmm_l1))
++        print('     Layer1 mm time: {:.4f}s'.format(self.t_fp_mm_l1))
++        print(' Layer2 time: {:.4f}s'.format(self.t_fp_l2))
++        print('     Layer2 spmm time: {:.4f}s'.format(self.t_fp_spmm_l2))
++        print('     Layer2 mm time: {:.4f}s'.format(self.t_fp_mm_l2))
++        print('Backward time: {:.4f}s'.format(self.t_bp))
++
++    def _train_without_val(self, labels, idx_train, train_iters, verbose, name):
++        print('_train_without_val')
++        self.train()
++        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
++        
++        for i in range(train_iters):
++            optimizer.zero_grad()
++            temp1 = time.time()
++            output, t1_l1, t2_l1, t_l1, t1_l2, t2_l2, t_l2 = self.forward(self.features, self.adj_norm, name)
++            loss_train = F.nll_loss(output[idx_train], labels[idx_train])
++            self.t_fp += (time.time()-temp1)
++            
++            temp2 = time.time()
++            loss_train.backward()
++            optimizer.step()
++            self.t_bp += (time.time()-temp2)
++            
++            self.t_fp_spmm_l1 += t1_l1
++            self.t_fp_mm_l1 += t2_l1 
++            self.t_fp_l1 += t_l1
++            
++            self.t_fp_spmm_l2 += t1_l2
++            self.t_fp_mm_l2 += t2_l2
++            self.t_fp_l2 += t_l2
++            if verbose and i % 10 == 0:
++                print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
++        '''
++        self.eval()
++        output, t1_l1, t2_l1, t_l1, t1_l2, t2_l2, t_l2 = self.forward(self.features, self.adj_norm, name)
++        self.t_fp_spmm_l1 += t1_l1
++        self.t_fp_mm_l1 += t2_l1 
++        self.t_fp_l1 += t_l1
++        self.t_fp_l2 += t_l2
++        self.t_fp_spmm_l2 += t1_l2
++        self.t_fp_mm_l2 += t2_l2
++        '''
++        self.output = output
++
++    def _train_with_val(self, labels, idx_train, idx_val, train_iters, verbose, name):
++        print('_train_with_val')
++        if verbose:
++            print('=== training gcn model ===')
++        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
++
++        best_loss_val = 100
++        best_acc_val = 0
++
++        for i in range(train_iters):
++            self.train()
++            optimizer.zero_grad()
++            output = self.forward(self.features, self.adj_norm, name)
++            loss_train = F.nll_loss(output[idx_train], labels[idx_train])
++            loss_train.backward()
++            optimizer.step()
++
++            if verbose and i % 10 == 0:
++                print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
++
++            self.eval()
++            output = self.forward(self.features, self.adj_norm)
++            loss_val = F.nll_loss(output[idx_val], labels[idx_val])
++            acc_val = utils.accuracy(output[idx_val], labels[idx_val])
++
++            if best_loss_val > loss_val:
++                best_loss_val = loss_val
++                self.output = output
++                weights = deepcopy(self.state_dict())
++
++            if acc_val > best_acc_val:
++                best_acc_val = acc_val
++                self.output = output
++                weights = deepcopy(self.state_dict())
++
++        if verbose:
++            print('=== picking the best model according to the performance on validation ===')
++        self.load_state_dict(weights)
++
++    def _train_with_early_stopping(self, labels, idx_train, idx_val, train_iters, patience, verbose):
++        print('_train_with_early_stopping')
++        if verbose:
++            print('=== training gcn model ===')
++        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
++
++        early_stopping = patience
++        best_loss_val = 100
++
++        for i in range(train_iters):
++            self.train()
++            optimizer.zero_grad()
++            output = self.forward(self.features, self.adj_norm)
++            loss_train = F.nll_loss(output[idx_train], labels[idx_train])
++            loss_train.backward()
++            optimizer.step()
++
++            if verbose and i % 10 == 0:
++                print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
++
++            self.eval()
++            output = self.forward(self.features, self.adj_norm)
++
++            # def eval_class(output, labels):
++            #     preds = output.max(1)[1].type_as(labels)
++            #     return f1_score(labels.cpu().numpy(), preds.cpu().numpy(), average='micro') + \
++            #         f1_score(labels.cpu().numpy(), preds.cpu().numpy(), average='macro')
++
++            # perf_sum = eval_class(output[idx_val], labels[idx_val])
++            loss_val = F.nll_loss(output[idx_val], labels[idx_val])
++
++            if best_loss_val > loss_val:
++                best_loss_val = loss_val
++                self.output = output
++                weights = deepcopy(self.state_dict())
++                patience = early_stopping
++            else:
++                patience -= 1
++            if i > early_stopping and patience <= 0:
++                break
++
++        if verbose:
++             print('=== early stopping at {0}, loss_val = {1} ==='.format(i, best_loss_val) )
++        self.load_state_dict(weights)
++
++    def test(self, idx_test):
++        self.eval()
++        output, t_l1, t1_l1, t_relu, t_l2, t1_l2, t2_l2 = self.predict()
++        # output = self.output
++        loss_test = F.nll_loss(output[idx_test], self.labels[idx_test])
++        acc_test = utils.accuracy(output[idx_test], self.labels[idx_test])
++        print("Test set results:",
++              "loss= {:.4f}".format(loss_test.item()),
++              "accuracy= {:.4f}".format(acc_test.item()))
++        return acc_test
++
++    def _set_parameters():
++        # TODO
++        pass
++
++    def predict(self, features=None, adj=None):
++        '''By default, inputs are unnormalized data'''
++
++        self.eval()
++        if features is None and adj is None:
++            return self.forward(self.features, self.adj_norm)
++        else:
++            if type(adj) is not torch.Tensor:
++                features, adj = utils.to_tensor(features, adj, device=self.device)
++
++            self.features = features
++            if utils.is_sparse_tensor(adj):
++                self.adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
++            else:
++                self.adj_norm = utils.normalize_adj_tensor(adj)
++            return self.forward(self.features, self.adj_norm)
++
+diff --git a/pygcn/gcn5.py b/pygcn/gcn5.py
+new file mode 100644
+index 0000000..f8b2568
+--- /dev/null
++++ b/pygcn/gcn5.py
+@@ -0,0 +1,378 @@
++import torch.nn as nn
++import torch.nn.functional as F
++import math
++import time
++import torch
++import torch.optim as optim
++import logging as log
++from torch.nn.parameter import Parameter
++from torch.nn.modules.module import Module
++from pygcn.gcnio.util import utils
++from copy import deepcopy
++from sklearn.metrics import f1_score
++from pygcn.writecsv import save 
++
++import dmk
++
++# A(XW)
++class GraphConvolution(Module):
++    """
++    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
++    """
++
++    def __init__(self, in_features, out_features, with_bias=True, name='dataset', layer='layer0'):
++        super(GraphConvolution, self).__init__()
++        self.in_features = in_features
++        self.out_features = out_features
++        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
++        self.layer = layer
++        if with_bias:
++            self.bias = Parameter(torch.FloatTensor(out_features))
++        else:
++            self.register_parameter('bias', None)
++        self.reset_parameters()
++        self.timers = dmk.Timers()
++        print(f"data: {name} -> layer = {layer}: A(XW) "
++              f"{in_features} ✕ {out_features}  bias {with_bias}" )
++
++    def reset_parameters(self):
++        # self.weight.data.fill_(1)
++        # if self.bias is not None:
++        #     self.bias.data.fill_(1)
++
++        stdv = 1. / math.sqrt(self.weight.size(1))
++        self.weight.data.uniform_(-stdv, stdv)
++        if self.bias is not None:
++            self.bias.data.uniform_(-stdv, stdv)
++
++    def reset_timing(self):
++        self.timers.reset()
++
++    def forward(self, input, adj):
++        with self.timers.hc.xw:
++          if input.data.is_sparse:
++              support = torch.spmm(input, self.weight)
++          else:
++              support = torch.mm(input, self.weight)
++        with self.timers.hc.af:
++          output = torch.spmm(adj, support)
++        if self.bias is not None:
++            with self.timers.hc.bi: output = output + self.bias
++        return output
++
++    def __repr__(self):
++        return self.__class__.__name__ + ' (' \
++               + str(self.in_features) + ' -> ' \
++               + str(self.out_features) + ')'
++
++# (AX)W
++class GraphConvolution2(Module):
++    """
++    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
++    """
++
++    def __init__(self, in_features, out_features, with_bias=True, name='dataset', layer='layer0'):
++        super(GraphConvolution2, self).__init__()
++        self.in_features = in_features
++        self.out_features = out_features
++        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
++        self.layer = layer
++        if with_bias:
++            self.bias = Parameter(torch.FloatTensor(out_features))
++        else:
++            self.register_parameter('bias', None)
++        self.reset_parameters()
++        self.timers = dmk.Timers()
++        print(f"data: {name} -> layer = {layer}: (AX)W "
++              f"{in_features} ✕ {out_features}  bias {with_bias}" )
++
++    def reset_parameters(self):
++        # self.weight.data.fill_(1)
++        # if self.bias is not None:
++        #     self.bias.data.fill_(1)
++
++        stdv = 1. / math.sqrt(self.weight.size(1))
++        self.weight.data.uniform_(-stdv, stdv)
++        if self.bias is not None:
++            self.bias.data.uniform_(-stdv, stdv)
++
++    def reset_timing(self):
++        self.timers.reset()
++
++    def forward(self, input, adj):
++        with self.timers.hc.af: support = torch.spmm(adj, input)
++        with self.timers.hc.xw: output = torch.mm(support, self.weight)
++        if self.bias is not None:
++            with self.timers.hc.bi: output = output + self.bias
++        return output
++
++    def __repr__(self):
++        return self.__class__.__name__ + ' (' \
++               + str(self.in_features) + ' -> ' \
++               + str(self.out_features) + ')'
++
++class GCN(nn.Module):
++
++    def __init__(self, nfeat, nhid, nclass, dataset,  
++            dropout=0.5, lr=0.01, weight_decay=5e-4, with_relu=True, with_bias=True, device=None):
++
++        super(GCN, self).__init__()
++
++        assert device is not None, "Please specify 'device'!"
++        self.device = device
++        self.nfeat = nfeat
++        self.hidden_sizes = [nhid]
++        self.nclass = nclass
++        self.dataname = dataset
++        self.gc1 = GraphConvolution(nfeat, nhid, with_bias=with_bias, name=dataset, layer='layer1')
++        if dataset=='pubmed' or dataset=='flickr': 
++            self.gc2 = GraphConvolution(nhid, nclass, with_bias=with_bias, name=dataset, layer='layer2')
++        else:
++            self.gc2 = GraphConvolution2(nhid, nclass, with_bias=with_bias, name=dataset, layer='layer2')
++        self.dropout = dropout
++        self.lr = lr
++        if not with_relu:
++            self.weight_decay = 0
++        else:
++            self.weight_decay = weight_decay
++        self.with_relu = with_relu
++        self.with_bias = with_bias
++        self.output = None
++        self.best_model = None
++        self.best_output = None
++        self.adj_norm = None
++        self.features = None
++        self.dur_fwd = dmk.Timer()
++
++    def reset_timing(self):
++        self.dur_fwd.reset();
++        for gc in [self.gc1,self.gc2]: gc.reset_timing();
++        
++    def forward(self, x, adj, name='dataset'):
++        '''
++            adj: normalized adjacency matrix
++        '''
++
++        with self.dur_fwd:
++          x = self.gc1(x, adj);
++          if self.with_relu: x = F.relu(x)
++          x = F.dropout(x, self.dropout, training=self.training)
++          x = self.gc2(x, adj)
++          x = F.log_softmax(x, dim=1)
++        return x
++
++    def initialize(self):
++        self.gc1.reset_parameters()
++        self.gc2.reset_parameters()
++
++    def fit(self, features, adj, labels, idx_train, idx_val=None, train_iters=200, initialize=True, verbose=False, normalize=True, patience=500, name='dataset'):
++        '''
++            train the gcn model, when idx_val is not None, pick the best model
++            according to the validation loss
++        '''
++        self.device = self.gc1.weight.device
++        if initialize:
++            self.initialize()
++
++        if type(adj) is not torch.Tensor:
++            print("Transform data to GPU device ...")
++            features, adj, labels = utils.to_tensor(features, adj, labels, device=self.device)
++            #log.info(adj.dtype)
++            #log.info(features.dtype)
++            #return ;
++        else:
++            features = features.to(self.device)
++            adj = adj.to(self.device)
++            labels = labels.to(self.device)
++
++        print(f"Graph size: {features.shape[0]} vertices "
++              f"Input Features: {features.shape[1]} "
++              f"is_sp {features.data.is_sparse}" )
++
++        if normalize:
++            if utils.is_sparse_tensor(adj):
++                adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
++            else:
++                adj_norm = utils.normalize_adj_tensor(adj)
++        else:
++            adj_norm = adj
++        
++        if False and utils.is_sparse_tensor(adj_norm):
++            save.write(adj_norm, name)
++        
++        self.adj_norm = adj_norm
++        self.features = features
++        self.labels = labels
++        
++        if idx_val is None:
++            self._train_without_val(labels, idx_train, train_iters, verbose, name)
++        else:
++            if patience < train_iters:
++                self._train_with_early_stopping(labels, idx_train, idx_val, train_iters, patience, verbose, name)
++            else:
++                self._train_with_val(labels, idx_train, idx_val, train_iters, verbose, name)
++        
++        # print('Forward time: {:.4f}s'.format(self.t_fp))
++        # print(' Layer1 time: {:.4f}s'.format(self.t_fp_l1))
++        # print('     Layer1 spmm time: {:.4f}s'.format(self.t_fp_spmm_l1))
++        # print('     Layer1 mm time: {:.4f}s'.format(self.t_fp_mm_l1))
++        # print(' Layer2 time: {:.4f}s'.format(self.t_fp_l2))
++        # print('     Layer2 spmm time: {:.4f}s'.format(self.t_fp_spmm_l2))
++        # print('     Layer2 mm time: {:.4f}s'.format(self.t_fp_mm_l2))
++        # print('Backward time: {:.4f}s'.format(self.t_bp))
++
++        print(f"Forward time: {self.dur_fwd.s():.4f} s "
++              f"for {self.dur_fwd.n_calls} calls.");
++
++        for gc in [self.gc1,self.gc2]:
++            print(f"{gc.layer} xw: {gc.timers.h.xw.avms():6.4f} ms  "
++              f" cu {gc.timers.c.xw.avms():6.4f} ms "
++              f" af: {gc.timers.h.af.avms():7.4f} ms "
++              f" cu {gc.timers.c.af.avms():7.4f} ms "
++              f" bi: {gc.timers.h.bi.avms():7.4f} ms "
++              f" cu {gc.timers.c.bi.avms():7.4f} ms" );
++
++    def _train_without_val(self, labels, idx_train, train_iters, verbose, name):
++        print('_train_without_val')
++        self.train()
++        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
++
++        ti = dmk.Timers()
++        warmup_upto = 10 if train_iters >= 20 else 1 if train_iters == 1 else 0
++
++        for i in range(train_iters):
++            optimizer.zero_grad()
++            with ti.h.fwd:
++                output = self.forward(self.features, self.adj_norm, name)
++            loss_train = F.nll_loss(output[idx_train], labels[idx_train])
++            with ti.h.bwd:
++                loss_train.backward()
++            optimizer.step()
++            if verbose and ( i % 10 == 0 or i == warmup_upto ):
++                print(f'Epoch {i:3d}, training loss: {loss_train.item():.6f}'
++                      f'  Fwd: {ti.h.fwd.avms():.3f} ms/iter'
++                      f'  Bwd: {ti.h.bwd.avms():.3f} ms/iter',
++                      end='')
++                ti.reset()
++                if i == warmup_upto:
++                    self.reset_timing();
++                    print(" Warmup ending.",end='')
++                print("");
++        self.output = output
++
++    def _train_with_val(self, labels, idx_train, idx_val, train_iters, verbose, name):
++        print('_train_with_val')
++        if verbose:
++            print('=== training gcn model ===')
++        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
++
++        best_loss_val = 100
++        best_acc_val = 0
++
++        for i in range(train_iters):
++            self.train()
++            optimizer.zero_grad()
++            output = self.forward(self.features, self.adj_norm, name)
++            loss_train = F.nll_loss(output[idx_train], labels[idx_train])
++            loss_train.backward()
++            optimizer.step()
++
++            if verbose and i % 10 == 0:
++                print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
++
++            self.eval()
++            output = self.forward(self.features, self.adj_norm)
++            loss_val = F.nll_loss(output[idx_val], labels[idx_val])
++            acc_val = utils.accuracy(output[idx_val], labels[idx_val])
++
++            if best_loss_val > loss_val:
++                best_loss_val = loss_val
++                self.output = output
++                weights = deepcopy(self.state_dict())
++
++            if acc_val > best_acc_val:
++                best_acc_val = acc_val
++                self.output = output
++                weights = deepcopy(self.state_dict())
++
++        if verbose:
++            print('=== picking the best model according to the performance on validation ===')
++        self.load_state_dict(weights)
++
++    def _train_with_early_stopping(self, labels, idx_train, idx_val, train_iters, patience, verbose):
++        print('_train_with_early_stopping')
++        if verbose:
++            print('=== training gcn model ===')
++        optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
++
++        early_stopping = patience
++        best_loss_val = 100
++
++        for i in range(train_iters):
++            self.train()
++            optimizer.zero_grad()
++            output = self.forward(self.features, self.adj_norm)
++            loss_train = F.nll_loss(output[idx_train], labels[idx_train])
++            loss_train.backward()
++            optimizer.step()
++
++            if verbose and i % 10 == 0:
++                print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
++
++            self.eval()
++            output = self.forward(self.features, self.adj_norm)
++
++            # def eval_class(output, labels):
++            #     preds = output.max(1)[1].type_as(labels)
++            #     return f1_score(labels.cpu().numpy(), preds.cpu().numpy(), average='micro') + \
++            #         f1_score(labels.cpu().numpy(), preds.cpu().numpy(), average='macro')
++
++            # perf_sum = eval_class(output[idx_val], labels[idx_val])
++            loss_val = F.nll_loss(output[idx_val], labels[idx_val])
++
++            if best_loss_val > loss_val:
++                best_loss_val = loss_val
++                self.output = output
++                weights = deepcopy(self.state_dict())
++                patience = early_stopping
++            else:
++                patience -= 1
++            if i > early_stopping and patience <= 0:
++                break
++
++        if verbose:
++             print('=== early stopping at {0}, loss_val = {1} ==='.format(i, best_loss_val) )
++        self.load_state_dict(weights)
++
++    def test(self, idx_test):
++        self.eval()
++        output, t_l1, t1_l1, t_relu, t_l2, t1_l2, t2_l2 = self.predict()
++        # output = self.output
++        loss_test = F.nll_loss(output[idx_test], self.labels[idx_test])
++        acc_test = utils.accuracy(output[idx_test], self.labels[idx_test])
++        print("Test set results:",
++              "loss= {:.4f}".format(loss_test.item()),
++              "accuracy= {:.4f}".format(acc_test.item()))
++        return acc_test
++
++    def _set_parameters():
++        # TODO
++        pass
++
++    def predict(self, features=None, adj=None):
++        '''By default, inputs are unnormalized data'''
++
++        self.eval()
++        if features is None and adj is None:
++            return self.forward(self.features, self.adj_norm)
++        else:
++            if type(adj) is not torch.Tensor:
++                features, adj = utils.to_tensor(features, adj, device=self.device)
++
++            self.features = features
++            if utils.is_sparse_tensor(adj):
++                self.adj_norm = utils.normalize_adj_tensor(adj, sparse=True)
++            else:
++                self.adj_norm = utils.normalize_adj_tensor(adj)
++            return self.forward(self.features, self.adj_norm)
++
+diff --git a/pygcn/gcnio/util/utils.py b/pygcn/gcnio/util/utils.py
+index f86c8ee..5b37912 100755
+--- a/pygcn/gcnio/util/utils.py
++++ b/pygcn/gcnio/util/utils.py
+@@ -216,7 +216,7 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
+         np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
+     values = torch.from_numpy(sparse_mx.data)
+     shape = torch.Size(sparse_mx.shape)
+-    return torch.sparse.FloatTensor(indices, values, shape)
++    return torch.sparse_coo_tensor(indices, values, shape)
+ 
+ def to_scipy(tensor):
+     """Convert a dense/sparse tensor to """
+diff --git a/pygcn/writecsv/save.py b/pygcn/writecsv/save.py
+index 9f817c2..121af08 100644
+--- a/pygcn/writecsv/save.py
++++ b/pygcn/writecsv/save.py
+@@ -1,4 +1,4 @@
+-import glog as log
++import logging as log
+ import csv
+ import torch
+ import numpy as np
+@@ -77,4 +77,4 @@ def write(adj,name):
+         writer.writerow(r)
+     fo.close()
+     
+-    return True
+\ No newline at end of file
++    return True
+diff --git a/pyhgnn/models/HGNN.py b/pyhgnn/models/HGNN.py
+index 37e2926..d811d9a 100644
+--- a/pyhgnn/models/HGNN.py
++++ b/pyhgnn/models/HGNN.py
+@@ -4,7 +4,7 @@ import time
+ import torch.nn.functional as F
+ import math
+ import torch
+-import glog as log
++import logging as log
+ from torch.nn.parameter import Parameter
+ 
+ class HGNN_conv(nn.Module):
+diff --git a/pyhgnn/train.py b/pyhgnn/train.py
+index 5580ae8..9157d06 100644
+--- a/pyhgnn/train.py
++++ b/pyhgnn/train.py
+@@ -3,7 +3,7 @@ import time
+ import copy
+ import torch
+ import torch.optim as optim
+-import glog as log
++import logging as log
+ import pprint as pp
+ import utils.hypergraph_utils as hgut
+ from models import HGNN
+diff --git a/pyhgnn/writecsv/save.py b/pyhgnn/writecsv/save.py
+index 9f817c2..121af08 100644
+--- a/pyhgnn/writecsv/save.py
++++ b/pyhgnn/writecsv/save.py
+@@ -1,4 +1,4 @@
+-import glog as log
++import logging as log
+ import csv
+ import torch
+ import numpy as np
+@@ -77,4 +77,4 @@ def write(adj,name):
+         writer.writerow(r)
+     fo.close()
+     
+-    return True
+\ No newline at end of file
++    return True
+diff --git a/row_analysis/row_analysis.py b/row_analysis/row_analysis.py
+index 8879405..33f8fb9 100644
+--- a/row_analysis/row_analysis.py
++++ b/row_analysis/row_analysis.py
+@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
+ import numpy as np
+ import pandas as pd
+ from math import ceil, floor, sqrt
+-import glog as log
++import logging as log
+ 
+ def load(f):
+     for i in f:
+@@ -147,4 +147,4 @@ plt.ylim([np.log10(1), np.log10(mx)+0.1])
+ 
+ plt.grid()
+ 
+-plt.savefig("row.svg")
+\ No newline at end of file
++plt.savefig("row.svg")

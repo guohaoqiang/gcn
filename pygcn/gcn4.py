@@ -12,14 +12,14 @@ from copy import deepcopy
 from sklearn.metrics import f1_score
 from pygcn.writecsv import save 
 
-
-class GraphConvolution1(Module):
+# A(XW)
+class GraphConvolution(Module):
     """
     Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
     """
 
-    def __init__(self, in_features, out_features, with_bias=True):
-        super(GraphConvolution1, self).__init__()
+    def __init__(self, in_features, out_features, with_bias=True, name='dataset', layer='layer0'):
+        super(GraphConvolution, self).__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.weight = Parameter(torch.FloatTensor(in_features, out_features))
@@ -28,46 +28,7 @@ class GraphConvolution1(Module):
         else:
             self.register_parameter('bias', None)
         self.reset_parameters()
-
-    def reset_parameters(self):
-        # self.weight.data.fill_(1)
-        # if self.bias is not None:
-        #     self.bias.data.fill_(1)
-
-        stdv = 1. / math.sqrt(self.weight.size(1))
-        self.weight.data.uniform_(-stdv, stdv)
-        if self.bias is not None:
-            self.bias.data.uniform_(-stdv, stdv)
-
-    def forward(self, support, name='dataset', layer='layer0'):
-        t1 = time.time()    
-        output = torch.mm(support,self.weight)
-        t1 = time.time()-t1
-        if self.bias is not None:
-            return output + self.bias, t1
-        else:
-            return output, t1
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' (' \
-               + str(self.in_features) + ' -> ' \
-               + str(self.out_features) + ')'
-
-class GraphConvolution2(Module):
-    """
-    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
-    """
-
-    def __init__(self, in_features, out_features, with_bias=True):
-        super(GraphConvolution2, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
-        if with_bias:
-            self.bias = Parameter(torch.FloatTensor(out_features))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
+        print('data: ', name, ' -> layer = ', layer, ': A(XW)')
 
     def reset_parameters(self):
         # self.weight.data.fill_(1)
@@ -80,9 +41,67 @@ class GraphConvolution2(Module):
             self.bias.data.uniform_(-stdv, stdv)
 
     def forward(self, input, adj, name='dataset', layer='layer0'):
-        
+        t1 = 0
+        if input.data.is_sparse:
+            print(name+' : '+layer+' : '+'spmm')
+            t1 = time.time()
+            support = torch.spmm(input, self.weight)
+            t1 = time.time()-t1
+        else:
+            print(name+' : '+layer+' : '+'mm')
+            t1 = time.time()
+            support = torch.mm(input, self.weight)
+            t1 = time.time()-t1
+        t2 = time.time()    
+        output = torch.spmm(adj, support)
+        t2 = time.time()-t2
+        if self.bias is not None:
+            print("@59: ",layer)
+            if layer=='layer1':
+                return output + self.bias, t2+t1, 0
+            else:
+                return output + self.bias, t2, t1
+        else:
+            if layer=='layer1':
+                return output, t2+t1, 0
+            else:
+                return output, t2, t1
 
-        
+    def __repr__(self):
+        return self.__class__.__name__ + ' (' \
+               + str(self.in_features) + ' -> ' \
+               + str(self.out_features) + ')'
+
+# (AX)W
+class GraphConvolution2(Module):
+    """
+    Simple GCN layer, similar to https://arxiv.org/abs/1609.02907
+    """
+
+    def __init__(self, in_features, out_features, with_bias=True, name='dataset', layer='layer0'):
+        super(GraphConvolution2, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
+        if with_bias:
+            self.bias = Parameter(torch.FloatTensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+        print('data: ', name, ' -> layer = ', layer, ': (AX)W')
+
+    def reset_parameters(self):
+        # self.weight.data.fill_(1)
+        # if self.bias is not None:
+        #     self.bias.data.fill_(1)
+
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.bias is not None:
+            self.bias.data.uniform_(-stdv, stdv)
+
+    def forward(self, input, adj, name='dataset', layer='layer0'):
+         
         t1 = time.time()    
         support = torch.spmm(adj, input)
         t1 = time.time()-t1
@@ -102,7 +121,8 @@ class GraphConvolution2(Module):
 
 class GCN(nn.Module):
 
-    def __init__(self, nfeat, nhid, nclass, dropout=0.5, lr=0.01, weight_decay=5e-4, with_relu=True, with_bias=True, device=None):
+    def __init__(self, nfeat, nhid, nclass, dataset,  
+            dropout=0.5, lr=0.01, weight_decay=5e-4, with_relu=True, with_bias=True, device=None):
 
         super(GCN, self).__init__()
 
@@ -111,8 +131,12 @@ class GCN(nn.Module):
         self.nfeat = nfeat
         self.hidden_sizes = [nhid]
         self.nclass = nclass
-        self.gc1 = GraphConvolution1(nfeat, nhid, with_bias=with_bias)
-        self.gc2 = GraphConvolution2(nhid, nclass, with_bias=with_bias)
+        self.dataname = dataset
+        self.gc1 = GraphConvolution(nfeat, nhid, with_bias=with_bias, name=dataset, layer='layer1')
+        if dataset=='pubmed' or dataset=='flickr': 
+            self.gc2 = GraphConvolution(nhid, nclass, with_bias=with_bias, name=dataset, layer='layer2')
+        else:
+            self.gc2 = GraphConvolution2(nhid, nclass, with_bias=with_bias, name=dataset, layer='layer2')
         self.dropout = dropout
         self.lr = lr
         if not with_relu:
@@ -130,11 +154,11 @@ class GCN(nn.Module):
         self.t_fp = 0
         self.t_bp = 0
         self.t_fp_l1 = 0
-        self.t_fp_t1_l1 = 0
-        self.t_fp_t_relu = 0
+        self.t_fp_spmm_l1 = 0
+        self.t_fp_mm_l1 = 0
         self.t_fp_l2 = 0
-        self.t_fp_t1_l2 = 0
-        self.t_fp_t2_l2 = 0
+        self.t_fp_spmm_l2 = 0
+        self.t_fp_mm_l2 = 0
 
     def forward(self, x, adj, name='dataset'):
         '''
@@ -143,24 +167,24 @@ class GCN(nn.Module):
         t_l1 = 0   # time cost in the first layer
         t_l2 = 0   # time cost in the second layer
         t_relu = 0
-        support = torch.sparse.mm(adj,x.to_dense().to(self.device))
         if self.with_relu:
             t_l1 = time.time()
-            x, t1_l1 = self.gc1(support, name, layer='Layer1')
+            x, t1_l1, t2_l1 = self.gc1(x, adj, name, layer='layer1')
             t_l1 = time.time() - t_l1;
+            
             t_relu = time.time()
             x = F.relu(x)
             t_relu = time.time() - t_relu;
         else:
             t_l1 = time.time()
-            x, t1_l1 = self.gc1(support, name, layer='Layer1')
+            x, t1_l1, t2_l1 = self.gc1(x, adj, name, layer='layer1')
             t_l1 = time.time() - t_l1;
         
         t_l2 = time.time()
         x = F.dropout(x, self.dropout, training=self.training)
-        x, t1_l2, t2_l2  = self.gc2(x, adj, name, layer='Layer2')
+        x, t1_l2, t2_l2  = self.gc2(x, adj, name, layer='layer2')
         t_l2 = time.time() - t_l2;
-        return F.log_softmax(x, dim=1), t_l1, t1_l1, t_relu, t_l2, t1_l2, t2_l2
+        return F.log_softmax(x, dim=1), t1_l1, t2_l1, t_l1, t1_l2, t2_l2, t_l2
 
     def initialize(self):
         self.gc1.reset_parameters()
@@ -194,7 +218,7 @@ class GCN(nn.Module):
         else:
             adj_norm = adj
         
-        if utils.is_sparse_tensor(adj_norm):
+        if False and utils.is_sparse_tensor(adj_norm):
             save.write(adj_norm, name)
         
         self.adj_norm = adj_norm
@@ -210,12 +234,12 @@ class GCN(nn.Module):
                 self._train_with_val(labels, idx_train, idx_val, train_iters, verbose, name)
         
         print('Forward time: {:.4f}s'.format(self.t_fp))
-        print('Layer1 time: {:.4f}s'.format(self.t_fp_l1))
-        print('Layer1 (AX)W time: {:.4f}s'.format(self.t_fp_t1_l1))
-        print('Layer reLU time: {:.4f}s'.format(self.t_fp_t_relu))
-        print('Layer2 time: {:.4f}s'.format(self.t_fp_l2))
-        print('Layer2 AX time: {:.4f}s'.format(self.t_fp_t1_l2))
-        print('Layer2 (AX)W time: {:.4f}s'.format(self.t_fp_t2_l2))
+        print(' Layer1 time: {:.4f}s'.format(self.t_fp_l1))
+        print('     Layer1 spmm time: {:.4f}s'.format(self.t_fp_spmm_l1))
+        print('     Layer1 mm time: {:.4f}s'.format(self.t_fp_mm_l1))
+        print(' Layer2 time: {:.4f}s'.format(self.t_fp_l2))
+        print('     Layer2 spmm time: {:.4f}s'.format(self.t_fp_spmm_l2))
+        print('     Layer2 mm time: {:.4f}s'.format(self.t_fp_mm_l2))
         print('Backward time: {:.4f}s'.format(self.t_bp))
 
     def _train_without_val(self, labels, idx_train, train_iters, verbose, name):
@@ -226,7 +250,7 @@ class GCN(nn.Module):
         for i in range(train_iters):
             optimizer.zero_grad()
             temp1 = time.time()
-            output, t_l1, t1_l1, t_relu, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
+            output, t1_l1, t2_l1, t_l1, t1_l2, t2_l2, t_l2 = self.forward(self.features, self.adj_norm, name)
             loss_train = F.nll_loss(output[idx_train], labels[idx_train])
             self.t_fp += (time.time()-temp1)
             
@@ -235,24 +259,25 @@ class GCN(nn.Module):
             optimizer.step()
             self.t_bp += (time.time()-temp2)
             
+            self.t_fp_spmm_l1 += t1_l1
+            self.t_fp_mm_l1 += t2_l1 
             self.t_fp_l1 += t_l1
-            self.t_fp_t1_l1 += t1_l1 
-            self.t_fp_t_relu += t_relu
+            
+            self.t_fp_spmm_l2 += t1_l2
+            self.t_fp_mm_l2 += t2_l2
             self.t_fp_l2 += t_l2
-            self.t_fp_t1_l2 += t1_l2
-            self.t_fp_t2_l2 += t2_l2
             if verbose and i % 10 == 0:
                 print('Epoch {}, training loss: {}'.format(i, loss_train.item()))
-
+        '''
         self.eval()
-        output, t_l1, t1_l1, t_relu, t_l2, t1_l2, t2_l2 = self.forward(self.features, self.adj_norm, name)
+        output, t1_l1, t2_l1, t_l1, t1_l2, t2_l2, t_l2 = self.forward(self.features, self.adj_norm, name)
+        self.t_fp_spmm_l1 += t1_l1
+        self.t_fp_mm_l1 += t2_l1 
         self.t_fp_l1 += t_l1
-        self.t_fp_t1_l1 += t1_l1 
-        self.t_fp_t_relu += t_relu
         self.t_fp_l2 += t_l2
-        self.t_fp_t1_l2 += t1_l2
-        self.t_fp_t2_l2 += t2_l2
-        
+        self.t_fp_spmm_l2 += t1_l2
+        self.t_fp_mm_l2 += t2_l2
+        '''
         self.output = output
 
     def _train_with_val(self, labels, idx_train, idx_val, train_iters, verbose, name):

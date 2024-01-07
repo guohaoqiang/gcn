@@ -3,6 +3,9 @@ import scipy.sparse as sp
 import os.path as osp
 import os
 import urllib.request
+import sys
+import pickle as pkl
+import networkx as nx
 
 from pygcn.gcnio.util.utils import get_train_val_test, get_train_val_test_gcn
 
@@ -64,9 +67,6 @@ class Dataset():
 
 
     def load_pubmed(self):
-        import sys
-        import pickle as pkl
-        import networkx as nx
 
         dataset = 'pubmed'
         names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']

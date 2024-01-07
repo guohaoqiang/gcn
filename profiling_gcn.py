@@ -1,6 +1,6 @@
 from __future__ import division
 from __future__ import print_function
-
+import argparse
 import time
 import torch
 import numpy as np
@@ -8,17 +8,16 @@ from numpy import argmax
 import torch.nn.functional as F
 from pygcn.gcnio.data import dataio
 from pygcn.gcnio.util import utils
-from pygcn.gcn1 import GCN
+from pygcn.gcn6 import GCN
 import scipy.sparse
 import json
 from sklearn.preprocessing import StandardScaler
-import glog as log
+import logging as log
 import torch.optim as optim
 
+log.basicConfig(filename='profiling-gcn.log', level=log.INFO);
 cuda = torch.cuda.is_available()
-print('cuda: %s' % cuda)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-#device = 'cpu'
 
 def load_data(prefix, normalize=True):
     adj_full = scipy.sparse.load_npz('./{}/adj_full.npz'.format(prefix))
@@ -80,10 +79,30 @@ torch.manual_seed(seed)
 if cuda:
     torch.cuda.manual_seed(seed)
 
-# load original dataset (to get clean features and labels)
+smallgraphs = {'pubmed'}
+largegraphs = {'flickr','ppi','amazon','reddit','yelp'}
+
+parser = argparse.ArgumentParser("Graph to be processed ... ")
+parser.add_argument('-g','--graph')
+parser.add_argument('-k','--hidden', type=int)
+parser.add_argument("-i",'--train-iters', dest='train_iters',
+                    type=int, default=100 )
+args = parser.parse_args()
+
 SMALL = False
+dataset = args.graph
+if dataset in smallgraphs:
+    SMALL = True
+elif dataset in largegraphs:
+    SMALL = False
+else:
+    print('Except input graph ... ')
+    exit(1)
+print(dataset)
+
+
+# load original dataset (to get clean features and labels)
 if SMALL:
-    dataset = 'polblogs'
     data = dataio.Dataset(root='/tmp/', name=dataset)
     adj, features, labels = data.adj, data.features, data.labels
     idx_train, idx_val, idx_test = data.idx_train, data.idx_val, data.idx_test
@@ -93,7 +112,7 @@ if SMALL:
     log.info(type(features))
     log.info(features.shape)
     log.info(type(labels))
-    log.info(labels.shape)
+    log.info(labels.shape[0])
     log.info(type(idx_train))
     log.info(idx_train.shape)
     log.info(type(idx_val))
@@ -101,10 +120,10 @@ if SMALL:
     log.info(type(idx_test))
     log.info(idx_test.shape)
 else:
-    data_prefix = './dataset/reddit'
+    data_prefix = './dataset/'+dataset
     temp_data = load_data(data_prefix)
     data_list = data_prefix.split('/')
-    print(data_list[-1])
+    dataset = data_list[-1]
     train_data = process_graph_data(*temp_data,data_list[-1])
     adj,adj_train,features,labels,role = train_data
     features = scipy.sparse.csr_matrix(features)
@@ -118,7 +137,7 @@ else:
     log.info(type(features))
     log.info(features.shape)
     log.info(type(labels))
-    log.info(labels.shape)
+    log.info(labels.shape[0])
     log.info(type(labels[0]))
     log.info(type(idx_train))
     log.info(idx_train.shape)
@@ -128,12 +147,12 @@ else:
     log.info(idx_test.shape)
 
 
-print(labels[0])
-print(labels[1])
-print(labels[8])
-print(labels.max())
+#print(labels[0])
+#print(labels[1])
+#print(labels[8])
+print('labels = ',labels.max()+1)
 
-model = GCN(nfeat=features.shape[1], nhid=32, nclass=labels.max()+1, device=device)
+model = GCN(nfeat=features.shape[1], nhid=args.hidden, nclass=labels.max()+1, dataset=dataset, device=device)
   
 optimizer = optim.Adam(model.parameters(),
                        lr=0.01, weight_decay=5e-4)
@@ -142,9 +161,9 @@ optimizer = optim.Adam(model.parameters(),
 model = model.to(device)
 TRAIN = 1
 if TRAIN:
-    model.fit(features, adj, labels, idx_train, train_iters=200, verbose=True, name='reddit')
-    torch.save(model.state_dict(),'./model/gcn.pt')
-TEST = 1
+    model.fit(features, adj, labels, idx_train, train_iters=args.train_iters, verbose=True, name=dataset)
+    #torch.save(model.state_dict(),'./model/gcn.pt')
+TEST = 0
 if TEST:
     model.load_state_dict(torch.load('./model/gcn.pt'))
     model.eval()
