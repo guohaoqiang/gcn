@@ -52,7 +52,6 @@ class flexspmm(torch.autograd.Function):
                             m, n, grad_out.shape[1], n_segs,
                             ctypes.c_void_p(grad_out.data_ptr()),
                             ctypes.c_void_p(grad_x.data_ptr()))
-        grad_edge_weight = None
         return None,None,None,None,None,None,None,None,grad_x
 
         
@@ -242,11 +241,11 @@ class GCN(nn.Module):
         self.gc2.reset_parameters()
 
     def permutateIdx(self, idx, vo_mp):
-        #temp = {}
-        #for i in range(vo_mp.shape[0]):
-        #    key = vo_mp[i].item()
-        #    temp[i] = key
-        return [vo_mp[i].item() for i in idx]
+        temp = {}
+        for i in range(vo_mp.shape[0]):
+            key = vo_mp[i].item()
+            temp[key] = i
+        return [temp[i] for i in idx]
 
     def fit(self, features, adj, labels, idx_train, idx_val=None, train_iters=200, initialize=True, verbose=False, normalize=True, patience=500, name='dataset'):
         '''
