@@ -174,8 +174,13 @@ class GraphConvolution2(Module):
     def reset_timing(self):
         self.timers.reset()
 
-    def forward(self, input, adj):
-        with self.timers.hc.af: support = torch.spmm(adj, input)
+    def forward(self, input, seg_rowPtr, segNzCV, segVoMap, m, n, n_segs, grouped_tailSeg, next_seg):
+        #with self.timers.hc.af: support = torch.spmm(adj, input)
+        with self.timers.hc.af:
+            support = flexspmm.apply(seg_rowPtr, segNzCV, segVoMap, 
+                                    m, n, n_segs.item(), 
+                                    grouped_tailSeg, next_seg,
+                                    input)
         with self.timers.hc.xw: output = torch.mm(support, self.weight)
         if self.bias is not None:
             with self.timers.hc.bi: output = output + self.bias
