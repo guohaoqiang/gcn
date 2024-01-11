@@ -2,6 +2,7 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+import copy
 import time
 import torch
 import torch.optim as optim
@@ -25,12 +26,14 @@ permutateLib = ctypes.cdll.LoadLibrary('./permutate.so')
 
 class flexspmm(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, seg_rowPtr, segNzCV, segVoMap, m, n, n_segs, grouped_tailSeg, next_seg, input, output):
+    def forward(ctx, seg_rowPtr, segNzCV, segVoMap, m, n, n_segs, grouped_tailSeg, next_seg, input):
+        output = torch.zeros((m,input.shape[1]), device='cuda')
+        next_seg1 = copy.deepcopy(next_seg)
         flexspmmLib.flexspmm(ctypes.c_void_p(seg_rowPtr.data_ptr()),
                             ctypes.c_void_p(segNzCV.data_ptr()),
                             ctypes.c_void_p(segVoMap.data_ptr()),
                             ctypes.c_void_p(grouped_tailSeg.data_ptr()),
-                            ctypes.c_void_p(next_seg.data_ptr()),
+                            ctypes.c_void_p(next_seg1.data_ptr()),
                             m, n, input.shape[1], n_segs,
                             ctypes.c_void_p(input.data_ptr()),
                             ctypes.c_void_p(output.data_ptr()))
@@ -40,16 +43,17 @@ class flexspmm(torch.autograd.Function):
     def backward(ctx, grad_out):
         seg_rowPtr, segNzCV, segVoMap, m, n, n_segs, grouped_tailSeg, next_seg = ctx.backward_flex 
         grad_x = torch.zeros( (m, grad_out.shape[1]), device="cuda" ) 
+        next_seg1 = copy.deepcopy(next_seg)
         flexspmmLib.flexspmm(ctypes.c_void_p(seg_rowPtr.data_ptr()),
                             ctypes.c_void_p(segNzCV.data_ptr()),
                             ctypes.c_void_p(segVoMap.data_ptr()),
                             ctypes.c_void_p(grouped_tailSeg.data_ptr()),
-                            ctypes.c_void_p(next_seg.data_ptr()),
+                            ctypes.c_void_p(next_seg1.data_ptr()),
                             m, n, grad_out.shape[1], n_segs,
                             ctypes.c_void_p(grad_out.data_ptr()),
                             ctypes.c_void_p(grad_x.data_ptr()))
         grad_edge_weight = None
-        return None,None,None,None,grad_x,grad_edge_weight,None
+        return None,None,None,None,None,None,None,None,grad_x
 
         
 # A(XW)
@@ -105,7 +109,6 @@ class GraphConvolution(Module):
                 x_n = input.to_sparse_csc().ccol_indices().shape[0]-1
                 x_nnz = input_csr.values().shape[0]
                 x_dim = self.weight.shape[1]
-                print("m=",x_m,",n=",x_n,",nnz=",x_nnz,",dim=",x_dim)
                 support = torch.zeros((x_m,x_dim), device='cuda')
                 with self.timers.hc.xw:
                     cuspmmLib.cuspmm(ctypes.c_void_p(input_csr.crow_indices().data_ptr()), 
@@ -122,16 +125,15 @@ class GraphConvolution(Module):
                 support = torch.mm(input, self.weight)
         
         # directly create tensor on GPU
-        output = torch.zeros((m,self.weight.shape[1]), device='cuda')
+        #output = torch.zeros((m,self.weight.shape[1]), device='cuda')
         with self.timers.hc.af:
           #output = torch.spmm(adj, support)
-          flexspmm.apply(seg_rowPtr, segNzCV, segVoMap, 
+          output = flexspmm.apply(seg_rowPtr, segNzCV, segVoMap, 
                         m, n, n_segs.item(), 
                         grouped_tailSeg, next_seg,
-                        support, output)
+                        support)
         if self.bias is not None:
             with self.timers.hc.bi: output = output + self.bias
-            
         return output
 
     def __repr__(self):
@@ -240,11 +242,11 @@ class GCN(nn.Module):
         self.gc2.reset_parameters()
 
     def permutateIdx(self, idx, vo_mp):
-        temp = {}
-        for i in range(vo_mp.shape[0]):
-            key = vo_mp[i].item()
-            temp[key] = i
-        return [temp[i] for i in idx]
+        #temp = {}
+        #for i in range(vo_mp.shape[0]):
+        #    key = vo_mp[i].item()
+        #    temp[i] = key
+        return [vo_mp[i].item() for i in idx]
 
     def fit(self, features, adj, labels, idx_train, idx_val=None, train_iters=200, initialize=True, verbose=False, normalize=True, patience=500, name='dataset'):
         '''
@@ -271,7 +273,7 @@ class GCN(nn.Module):
         else:
             adj_norm = adj
 
-        print((adj_norm.to_dense().transpose(1,0)==adj_norm.to_dense()).all())
+        #print((adj_norm.to_dense().transpose(1,0)==adj_norm.to_dense()).all())
         
         if False and utils.is_sparse_tensor(adj_norm):
             save.write(adj_norm, name)

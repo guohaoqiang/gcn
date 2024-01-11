@@ -14,7 +14,7 @@ void flexspmm_v9_permuteX(float* mat_b_dev, float* shadow_b_dev, int* voMp_dev,
         for (int i = lane_id; i<k; i += 32){
             shadow_b_dev[ row_idx*k+i ] = mat_b_dev[ tgt_row*k+i ]; 
         }
-        if (lane_id==0){
+        if (false && lane_id==0){
             shadow_labels_dev[ row_idx] = labels_dev[ tgt_row ]; 
         }
 	} // end C row loops    
@@ -32,7 +32,7 @@ void put_back(float* mat_b_dev, float* shadow_b_dev,
         for (int i = lane_id; i<k; i += 32){
             mat_b_dev[ row_idx*k+i ] = shadow_b_dev[ row_idx*k+i ]; 
         }
-        if (lane_id==0){
+        if (false && lane_id==0){
             labels_dev[ row_idx ] = shadow_labels_dev[ row_idx ]; 
         }
 	} // end C row loops    

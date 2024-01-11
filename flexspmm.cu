@@ -47,6 +47,7 @@ flexspmm_cuda_k4_vec1_v31(int* mdseg_rowPtr_dev, float* mdsegNzCV_dev, int*  mds
 
         if ( nsi < mdsms && seg_idx[ wp_id ] >= tail_seg_idx ) { nsi = mdsms; continue; }
         if ( nsi == mdsms && seg_idx[ wp_id ] >= mdn_segs ) break;
+    
  
         #pragma unroll
         for (int i=0; i<tm; ++i){
@@ -500,39 +501,39 @@ void flexspmm(int* mdseg_rowPtr_dev, float* mdsegNzCV_dev, int*  mdsegVoMap_dev,
               int mdm, int mdn, int mdk, int mdn_segs,
               float* mdshadow_b_dev, float* mdmat_c_dev){
     
-    printf("%d of %s: m = %d, n = %d, k = %d, n_segs = %d\n",__LINE__,__FILE__,
-            mdm,mdn,mdk,mdn_segs);
+    //printf("%d of %s: m = %d, n = %d, k = %d, n_segs = %d\n",__LINE__,__FILE__,
+    //        mdm,mdn,mdk,mdn_segs);
     cudaDeviceProp deviceProp;
     cudaGetDeviceProperties(&deviceProp, 0); 
     int mdsms = deviceProp.multiProcessorCount;
 
     if (mdk==8){
-        printf("\n%d of %s: kernel V32\n", __LINE__,__FILE__);
+        //printf("\n%d of %s: kernel V32\n", __LINE__,__FILE__);
         flexspmm_cuda_k8_vec2_v32<<<32*mdsms,64>>>(mdseg_rowPtr_dev, mdsegNzCV_dev, mdsegVoMap_dev,
                                   mdgrouped_tailSeg_dev, mdnext_seg_dev, 
                                   mdm, mdn, mdk, mdsms, mdn_segs,
                                   mdshadow_b_dev, mdmat_c_dev);
     }else if (mdk==16){
-        printf("\n%d of %s: kernel V33\n", __LINE__,__FILE__);
+        //printf("\n%d of %s: kernel V33\n", __LINE__,__FILE__);
         flexspmm_cuda_k16_vec4_v33<<<32*mdsms,64>>>(mdseg_rowPtr_dev, mdsegNzCV_dev, mdsegVoMap_dev,
                                    mdgrouped_tailSeg_dev, mdnext_seg_dev, 
                                    mdm, mdn, mdk, mdsms, mdn_segs,
                                    mdshadow_b_dev, mdmat_c_dev);
     }else if (mdk==32){
-        printf("\n%d of %s: kernel V34\n", __LINE__,__FILE__);
+        //printf("\n%d of %s: kernel V34\n", __LINE__,__FILE__);
         flexspmm_cuda_k32_vec4_v34<<<32*mdsms,64>>>(mdseg_rowPtr_dev, mdsegNzCV_dev, mdsegVoMap_dev,
                                    mdgrouped_tailSeg_dev, mdnext_seg_dev, 
                                    mdm, mdn, mdk, mdsms, mdn_segs,
                                    mdshadow_b_dev, mdmat_c_dev);
     }else if (mdk<32){
-        printf("\n%d of %s: kernel V31\n", __LINE__,__FILE__);
+        //printf("\n%d of %s: kernel V31\n", __LINE__,__FILE__);
         flexspmm_cuda_k4_vec1_v31<<<32*mdsms,64>>>(mdseg_rowPtr_dev, mdsegNzCV_dev, mdsegVoMap_dev,
                                   mdgrouped_tailSeg_dev, mdnext_seg_dev, 
                                   mdm, mdn, mdk, mdsms, mdn_segs,
                                   mdshadow_b_dev, mdmat_c_dev); 
     }else{
         // TO DO
-        printf("\n%d of %s: kernel V35\n", __LINE__,__FILE__);
+        //printf("\n%d of %s: kernel V35\n", __LINE__,__FILE__);
         flexspmm_cuda_vec1_v35<<<32*mdsms,64>>>(mdseg_rowPtr_dev, mdsegNzCV_dev, mdsegVoMap_dev,
                                   mdgrouped_tailSeg_dev, mdnext_seg_dev, 
                                   mdm, mdn, mdk, mdsms, mdn_segs,

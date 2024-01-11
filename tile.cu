@@ -82,10 +82,12 @@ void csr2seg_Cmajor(int ridx, int* rowPtr, int* colIdx, float* vals, int m, int 
                         // the row requires "atomic add".
                         // use MSB to mark it.
                         //segVoMap.push_back( voMp[i] | (1<<31) );
-                        segVoMap[ tm*n_segs[0]+i-rowStart ] = ( voMp[i] | (1<<31) );
+                        //segVoMap[ tm*n_segs[0]+i-rowStart ] = ( voMp[i] | (1<<31) );
+                        segVoMap[ tm*n_segs[0]+i-rowStart ] = ( i | (1<<31) );
                     }else{ 
                         //segVoMap.push_back( voMp[i] );
-                        segVoMap[ tm*n_segs[0]+i-rowStart ] = voMp[i];
+                        //segVoMap[ tm*n_segs[0]+i-rowStart ] = voMp[i];
+                        segVoMap[ tm*n_segs[0]+i-rowStart ] = i;
                     }
                 }else{
                     // for the last panel, the rows may be less than tm 
