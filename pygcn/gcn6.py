@@ -24,6 +24,13 @@ renumberLib = ctypes.cdll.LoadLibrary('./renumber.so')
 tileLib = ctypes.cdll.LoadLibrary('./tile.so')
 permutateLib = ctypes.cdll.LoadLibrary('./permutate.so')
 
+OVO = False
+DFS = False
+GOR = False
+RBT = True
+
+
+
 class flexspmm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, seg_rowPtr, segNzCV, segVoMap, m, n, n_segs, grouped_tailSeg, next_seg, input):
@@ -296,18 +303,33 @@ class GCN(nn.Module):
         self.m = adj_csr.crow_indices().shape[0]-1
         self.n = adj_csr.crow_indices().shape[0]-1
         self.nnz = adj_csr.values().shape[0]
-        print("m=",self.m,",n=",self.n,",nnz=",self.nnz)
-        vo_mp = torch.empty(self.m,dtype=int)
+        print("m =",self.m,",n =",self.n,",nnz =",self.nnz)
+        #vo_mp = torch.empty(self.m,dtype=int)
+        vo_mp = torch.tensor(np.arange(self.m))
         adj_rowPtr = adj_csr.crow_indices().to(torch.int32)
         adj_col = adj_csr.col_indices().to(torch.int32)
         adj_values = adj_csr.values()
         vo_mp = vo_mp.to(torch.int32)
-        renumberLib.dfs(ctypes.c_void_p(adj_rowPtr.data_ptr()), 
-                        ctypes.c_void_p(adj_col.data_ptr()),
-                        ctypes.c_void_p(adj_values.data_ptr()),
-                        ctypes.c_void_p(vo_mp.data_ptr()),
-                        self.m,self.n,self.nnz)
-        print("renumber complete") 
+        if OVO is not True:
+            if DFS:
+                renumberLib.dfs(ctypes.c_void_p(adj_rowPtr.data_ptr()), 
+                            ctypes.c_void_p(adj_col.data_ptr()),
+                            ctypes.c_void_p(adj_values.data_ptr()),
+                            ctypes.c_void_p(vo_mp.data_ptr()),
+                            self.m,self.n,self.nnz)
+            if GOR:
+                renumberLib.gorder(ctypes.c_void_p(adj_rowPtr.data_ptr()), 
+                            ctypes.c_void_p(adj_col.data_ptr()),
+                            ctypes.c_void_p(adj_values.data_ptr()),
+                            ctypes.c_void_p(vo_mp.data_ptr()),
+                            self.m,self.n,self.nnz)
+            if RBT:
+                renumberLib.rabbit(ctypes.c_void_p(adj_rowPtr.data_ptr()), 
+                            ctypes.c_void_p(adj_col.data_ptr()),
+                            ctypes.c_void_p(adj_values.data_ptr()),
+                            ctypes.c_void_p(vo_mp.data_ptr()),
+                            self.m,self.n,self.nnz)
+            print("renumber complete") 
         ## step2: tiling + reassignment (CPU)
         seg_rowPtr = torch.empty(self.nnz, dtype=torch.int32)
         segNzCV = torch.empty(2*self.nnz, dtype=torch.float32)
